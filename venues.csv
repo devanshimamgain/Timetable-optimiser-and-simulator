@@ -1,0 +1,25 @@
+venue_id,name,type,capacity
+LT-106,Lecture Theatre 106,lecture_theatre,120
+LT-124,Lecture Theatre 124,lecture_theatre,120
+LT-206,Lecture Theatre 206,lecture_theatre,120
+LT-224,Lecture Theatre 224,lecture_theatre,120
+CR-017,Classroom 017,classroom,60
+CR-113,Classroom 113,classroom,60
+CR-114,Classroom 114,classroom,60
+CR-115,Classroom 115,classroom,60
+CR-116,Classroom 116,classroom,60
+CR-117,Classroom 117,classroom,60
+CR-123,Classroom 123,classroom,60
+CR-124,Classroom 124,classroom,60
+LAB-009,Lab 009,lab,40
+LAB-102-A,Lab 102-A,lab,40
+LAB-102-B,Lab 102-B,lab,40
+LAB-121,Lab 121,lab,40
+LAB-206,Lab 206,lab,40
+LAB-209,Lab 209,lab,40
+LAB-224,Lab 224,lab,40
+LAB-302-A,Lab 302-A,lab,40
+LAB-302-B,Lab 302-B,lab,40
+LAB-3RD-FLOOR,Logic Lab 3rd Floor,lab,40
+LAB-BASEMENT,Logic Lab Basement,lab,40
+AUDI-529,Auditorium 529,auditorium,200
