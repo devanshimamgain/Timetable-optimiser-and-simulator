@@ -83,3 +83,180 @@ public:
     DetectedGroup* getNext() const { return next; }
     void setNext(DetectedGroup* p) { next = p; }
 };
+class GroupList {
+private:
+    DetectedGroup* head;
+    DetectedGroup* tail;
+    int size;
+ 
+public:
+    GroupList() : head(nullptr), tail(nullptr), size(0) {}
+ 
+    ~GroupList() {
+        while (head) {
+            DetectedGroup* tmp = head;
+            head = head->getNext();
+            delete tmp;
+        }
+    }
+ 
+    GroupList(const GroupList&) = delete;
+    GroupList& operator=(const GroupList&) = delete;
+ 
+    void add(DetectedGroup* g) {
+        if (head == nullptr) head = g;
+        else tail->setNext(g);
+        tail = g;
+        size++;
+    }
+ 
+    DetectedGroup* getHead() const { return head; }
+    int getSize() const { return size; }
+};
+class MergeDetector {
+private:
+    const SlotEntry* entries;
+    int n;
+    Graph graph;
+    GroupList groups;
+ 
+    static bool sameClass(const SlotEntry& x, const SlotEntry& y) {
+        return x.section != y.section &&
+               x.subject == y.subject &&
+               x.faculty == y.faculty &&
+               x.venue == y.venue;
+    }
+ 
+    void buildGraph() {
+        for (int i = 0; i < n; i++)
+            for (int j = i + 1; j < n; j++)
+                if (sameClass(entries[i], entries[j]))
+                    graph.addEdge(i, j);
+    }
+ 
+    void validateGroup(DetectedGroup* g) const {
+        int total = 0;
+        for (int i = 0; i < g->getCount(); i++) {
+            Section* s = searchSectionById(entries[g->getMember(i)].section);
+            if (s == nullptr) {
+                g->setInvalid("unknown section " + entries[g->getMember(i)].section);
+                return;
+            }
+            total += s->strength;
+        }
+        g->setStrength(total);
+ 
+        Venue* v = searchVenueById(entries[g->getMember(0)].venue);
+        if (v == nullptr)
+            g->setInvalid("unknown venue");
+        else if (v->type == "auditorium" && g->getCount() > MAX_MERGE_AUD)
+            g->setInvalid("more than 6 sections in auditorium");
+        else if (total > v->capacity)
+            g->setInvalid("venue capacity exceeded");
+    }
+ 
+public:
+    MergeDetector(const SlotEntry e[], int count)
+        : entries(e),
+          n(count > MAX_ENTRIES ? MAX_ENTRIES : count),
+          graph(n) {}
+ 
+    void detect() {
+        buildGraph();
+        for (int i = 0; i < n; i++) {
+            if (graph.isVisited(i)) continue;
+ 
+            int found[MAX_ENTRIES];
+            int cnt = 0;
+            graph.dfs(i, found, cnt);
+ 
+            if (cnt >= 2) {
+                DetectedGroup* g = new DetectedGroup();
+                for (int k = 0; k < cnt; k++) g->addMember(found[k]);
+                validateGroup(g);
+                groups.add(g);
+            }
+        }
+    }
+ 
+    int getGroupCount() const { return groups.getSize(); }
+    const DetectedGroup* getFirstGroup() const { return groups.getHead(); }
+    const SlotEntry& getEntry(int i) const { return entries[i]; }
+ 
+    void print() const {
+        int num = 1;
+        for (const DetectedGroup* g = groups.getHead(); g != nullptr; g = g->getNext(), num++) {
+            cout << "  Merged class " << num << ": { ";
+            for (int i = 0; i < g->getCount(); i++)
+                cout << entries[g->getMember(i)].section << " ";
+            cout << "}  " << entries[g->getMember(0)].subject
+                 << "  faculty=" << entries[g->getMember(0)].faculty
+                 << "  venue=" << entries[g->getMember(0)].venue
+                 << "  strength=" << g->getStrength()
+                 << "  -> " << (g->isValid() ? "VALID" : "INVALID")
+                 << " (" << g->getReason() << ")\n";
+        }
+    }
+};
+int collectSlotEntries(const string& day, int slot, SlotEntry out[], int maxCount) {
+    int n = 0;
+    for (TimetableEntry* t = timetableHead; t != nullptr; t = t->next) {
+        if (t->day != day) continue;
+        if (slot < t->startSlot || slot >= t->startSlot + t->duration) continue;
+ 
+        MergedGroup* declared = searchMergedGroupById(t->sectionOrGroup);
+        if (declared == nullptr) {
+            if (n < maxCount) out[n++] = SlotEntry{t->sectionOrGroup, t->subject, t->facultyId, t->venueId};
+        } else {
+            string ids = declared->sectionIds;     
+            string current;
+            for (size_t i = 0; i <= ids.size(); i++) {
+                if (i == ids.size() || ids[i] == ';') {
+                    if (!current.empty() && n < maxCount)
+                        out[n++] = SlotEntry{current, t->subject, t->facultyId, t->venueId};
+                    current.clear();
+                } else {
+                    current += ids[i];
+                }
+            }
+        }
+    }
+    return n;
+}
+
+int main() {
+    loadAllCSVFiles();
+ 
+    const string days[] = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+ 
+    int maxSlot = 0;
+    for (TimetableEntry* t = timetableHead; t != nullptr; t = t->next)
+        if (t->startSlot + t->duration - 1 > maxSlot) maxSlot = t->startSlot + t->duration - 1;
+ 
+    int totalGroups = 0, invalidGroups = 0;
+ 
+    cout << "\n===== MERGED CLASSES FOUND =====\n";
+    for (const string& day : days) {
+        for (int slot = 1; slot <= maxSlot; slot++) {
+            SlotEntry entries[MAX_ENTRIES];
+            int n = collectSlotEntries(day, slot, entries, MAX_ENTRIES);
+ 
+            MergeDetector detector(entries, n);
+            detector.detect();
+ 
+            if (detector.getGroupCount() > 0) {
+                cout << day << ", slot " << slot << ":\n";
+                detector.print();
+                totalGroups += detector.getGroupCount();
+                for (const DetectedGroup* g = detector.getFirstGroup(); g != nullptr; g = g->getNext())
+                    if (!g->isValid()) invalidGroups++;
+            }
+        }
+    }
+ 
+    cout << "\nTotal merged classes: " << totalGroups
+         << "   Invalid: " << invalidGroups << "\n";
+ 
+    freeAllMemory();
+    return 0;
+}
