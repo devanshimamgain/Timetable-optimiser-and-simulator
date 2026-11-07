@@ -60,7 +60,7 @@ TimetableEntry* timetableTail = nullptr;
 MergedGroup* mergedGroupHead = nullptr;
 MergedGroup* mergedGroupTail = nullptr;
 
-/
+
 
 string trim(const string& s) {
     size_t start = 0;
