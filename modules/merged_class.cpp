@@ -1,13 +1,34 @@
 #define main person1_main
 #include "../Person1_CSVHandler_FIXED.cpp"
 #undef main
-const int MAX_ENTRIES = 50;       
-const int MAX_MERGE_AUD = 6;      
+const int MAX_ENTRIES = 50;
+
+// University rules, read from config.txt (see data/data_full/config.txt). 0 or empty = no rule.
+int maxMergeAud = 0;
+string auditoriumType = "";
+
+void loadMergeConfig() {
+    ifstream file("config.txt");
+    if (!file.is_open()) return;
+    string line;
+    while (getline(file, line)) {
+        line = trim(line);
+        if (line.empty() || line[0] == '#') continue;
+        size_t eq = line.find('=');
+        if (eq == string::npos) continue;
+        string key = trim(line.substr(0, eq));
+        string val = trim(line.substr(eq + 1));
+        if (key == "max_sections_in_auditorium") maxMergeAud = atoi(val.c_str());
+        else if (key == "auditorium_type") auditoriumType = val;
+    }
+}
+
 struct SlotEntry {
     string section;
     string subject;
     string faculty;
     string venue;
+    int duration;
 };
 
 struct AdjNode {
@@ -120,11 +141,13 @@ private:
     Graph graph;
     GroupList groups;
  
+    // Same class for different sections, and the same length. Entries start in the same slot here.
     static bool sameClass(const SlotEntry& x, const SlotEntry& y) {
         return x.section != y.section &&
                x.subject == y.subject &&
                x.faculty == y.faculty &&
-               x.venue == y.venue;
+               x.venue == y.venue &&
+               x.duration == y.duration;
     }
  
     void buildGraph() {
@@ -149,8 +172,8 @@ private:
         Venue* v = searchVenueById(entries[g->getMember(0)].venue);
         if (v == nullptr)
             g->setInvalid("unknown venue");
-        else if (v->type == "auditorium" && g->getCount() > MAX_MERGE_AUD)
-            g->setInvalid("more than 6 sections in auditorium");
+        else if (maxMergeAud > 0 && !auditoriumType.empty() && v->type == auditoriumType && g->getCount() > maxMergeAud)
+            g->setInvalid("too many sections in auditorium (limit from config.txt)");
         else if (total > v->capacity)
             g->setInvalid("venue capacity exceeded");
     }
@@ -202,18 +225,19 @@ int collectSlotEntries(const string& day, int slot, SlotEntry out[], int maxCoun
     int n = 0;
     for (TimetableEntry* t = timetableHead; t != nullptr; t = t->next) {
         if (t->day != day) continue;
-        if (slot < t->startSlot || slot >= t->startSlot + t->duration) continue;
- 
+        // a class is counted only in the slot where it starts, so a 2-slot class is not counted twice
+        if (slot != t->startSlot) continue;
+
         MergedGroup* declared = searchMergedGroupById(t->sectionOrGroup);
         if (declared == nullptr) {
-            if (n < maxCount) out[n++] = SlotEntry{t->sectionOrGroup, t->subject, t->facultyId, t->venueId};
+            if (n < maxCount) out[n++] = SlotEntry{t->sectionOrGroup, t->subject, t->facultyId, t->venueId, t->duration};
         } else {
             string ids = declared->sectionIds;     
             string current;
             for (size_t i = 0; i <= ids.size(); i++) {
                 if (i == ids.size() || ids[i] == ';') {
                     if (!current.empty() && n < maxCount)
-                        out[n++] = SlotEntry{current, t->subject, t->facultyId, t->venueId};
+                        out[n++] = SlotEntry{current, t->subject, t->facultyId, t->venueId, t->duration};
                     current.clear();
                 } else {
                     current += ids[i];
@@ -226,7 +250,8 @@ int collectSlotEntries(const string& day, int slot, SlotEntry out[], int maxCoun
 
 int main() {
     loadAllCSVFiles();
- 
+    loadMergeConfig();
+
     const string days[] = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
  
     int maxSlot = 0;

@@ -1,22 +1,26 @@
 // Person 4: Timetable simulation + SFML GUI
 // C++17, SFML 2.5/2.6
-// CSV format (no quoted commas):
-// day,period,duration,subject,section,faculty,venue,clash,recommendation
-// Mon,1,1,Math,A,Dr Rao,R101,0,
-// Mon,1,1,Physics,B,Dr Rao,R102,1,"Move Physics to period 3"
-// Tue,2,2,Lab,A,Dr Sen,L201,0,
+//
+// The data comes from the team's modules, not from a separate CSV format:
+//   - Person 1 (Person1_CSVHandler_FIXED.cpp) loads and validates the CSV files
+//   - Person 3 (gi.cpp) checks the timetable for clashes and gives the clash details
+//   - this file shows the classes slot by slot in the window
+//
+// Data folder: the CSV files must be in the folder where you run the program.
 //
 // Compile on Linux:
 // g++ -std=c++17 person4_simulator.cpp -o simulator -lsfml-graphics -lsfml-window -lsfml-system
-// Put a font named arial.ttf beside executable, or change FONT_PATH below.
-// Run: ./simulator timetable.csv
-//
-// This module visualizes the clash flag/recommendation supplied by teammate 3.
-// Connect loadCSV() to your team's actual data/detector for final integration.
+// Compile on Windows (MinGW, SFML installed):
+// g++ -std=c++17 person4_simulator.cpp -o simulator.exe -lsfml-graphics -lsfml-window -lsfml-system
+// Put a font named arial.ttf beside the executable, or change the font path in main().
+// Run: ./simulator
+
+#define GI_NO_MAIN            // gi.cpp has its own main(); this file has its own
+#include "gi.cpp"
 
 #include <SFML/Graphics.hpp>
 #include <algorithm>
-#include <fstream>
+#include <cctype>
 #include <sstream>
 #include <string>
 #include <iostream>
@@ -28,9 +32,12 @@ struct Entry {
     bool clash=false;
 };
 
-int dayNumber(const std::string& d) {
-    const std::string days[]={"Mon","Tue","Wed","Thu","Fri","Sat","Sun"};
-    for(int i=0;i<7;++i) if(d==days[i]) return i;
+// "Monday", "MON" and "mon" all give 0 (Monday). Unknown day gives 7 (last).
+int dayNumber(const std::string& d){
+    const std::string days[]={"mon","tue","wed","thu","fri","sat","sun"};
+    std::string key;
+    for(size_t i=0;i<3&&i<d.size();++i) key+=(char)std::tolower((unsigned char)d[i]);
+    for(int i=0;i<7;++i) if(key==days[i]) return i;
     return 7;
 }
 bool earlier(const Entry& a,const Entry& b) {
@@ -84,23 +91,36 @@ public:
     }
 };
 
-bool loadCSV(const std::string& filename,TimetableQueue& q){
-    std::ifstream file(filename);
-    if(!file)return false;
-    std::string line;
-    while(std::getline(file,line)){
-        if(line.empty())continue;
-        std::stringstream ss(line);
-        std::string f[9];
-        for(int i=0;i<9;++i) if(!std::getline(ss,f[i],','))f[i]="";
-        if(f[0]=="day"||f[0]=="Day")continue;
-        try{
-            Entry e;
-            e.day=f[0];e.period=std::stoi(f[1]);e.duration=std::max(1,std::stoi(f[2]));
-            e.subject=f[3];e.section=f[4];e.faculty=f[5];e.venue=f[6];
-            e.clash=(std::stoi(f[7])!=0);e.recommendation=f[8];
-            if(e.period>0)q.enqueue(e);
-        }catch(...){std::cerr<<"Skipping malformed CSV row: "<<line<<"\n";}
+// Text of every clash that involves this class (from Person 3's check).
+std::string clashTextFor(const TimetableEntry* t){
+    std::string r;
+    for(int i=0;i<clashCount;++i)
+        if(clashes[i].a==t||clashes[i].b==t){
+            if(!r.empty()) r+="; ";
+            r+=clashes[i].kind+": "+clashes[i].text;
+        }
+    return r;
+}
+
+// Loads the timetable with Person 1's loader, checks it for clashes (Person 3),
+// and puts every class into the queue.
+bool loadCSV(TimetableQueue& q){
+    loadAllCSVFiles();
+    if(timetableHead==nullptr) return false;
+    runClashCheck();
+    for(TimetableEntry* t=timetableHead;t!=nullptr;t=t->next){
+        Entry e;
+        e.day=t->day;
+        e.period=t->startSlot;
+        e.duration=t->duration;
+        e.subject=t->subject;
+        e.section=t->sectionOrGroup;
+        Faculty* f=searchFacultyById(t->facultyId);
+        e.faculty=f?f->name:t->facultyId;
+        e.venue=t->venueId;
+        e.clash=hasClash(t);
+        e.recommendation=clashTextFor(t);
+        q.enqueue(e);
     }
     q.sortChronologically();
     return true;
@@ -131,10 +151,10 @@ int makeSlots(const TimetableQueue& q,Slot slots[],int cap){
 sf::Text text(const std::string& s,const sf::Font& f,unsigned size,sf::Vector2f pos,sf::Color c=sf::Color(30,35,45)){
     sf::Text t(s,f,size);t.setPosition(pos);t.setFillColor(c);return t;
 }
-int main(int argc,char**argv){
+
+int main(){
     TimetableQueue q;
-    std::string path=argc>1?argv[1]:"timetable.csv";
-    if(!loadCSV(path,q)){std::cerr<<"Cannot open "<<path<<". Create CSV as shown in source header.\n";return 1;}
+    if(!loadCSV(q)){std::cerr<<"Could not load timetable.csv from this folder. Run the program where the CSV files are.\n";return 1;}
     Slot slots[500];int slotCount=makeSlots(q,slots,500);int current=-1;
 
     sf::RenderWindow win(sf::VideoMode(1100,760),"Timetable Optimiser | Slot Simulator");
@@ -169,14 +189,14 @@ int main(int argc,char**argv){
         if(current<0){slotTitle.setString("Ready: "+std::to_string(q.size())+" timetable entries loaded");
             status.setString("No slot selected. Press NEXT SLOT to start.");status.setFillColor(sf::Color(50,90,160));
             tableText.setString("The selected slot's class allocations will appear here.");
-            recText.setString("When the clash detector supplies clash details and proposed fixes, they will be shown here.");
+            recText.setString("Clash details and the reason for each clash will be shown here.");
         }else if(current>=slotCount){
             slotTitle.setString("Simulation complete");status.setString("Every distinct day/period batch has been displayed.");
             tableText.setString("End of timetable.");recText.setString("");
         }else{
             Slot& s=slots[current];
             slotTitle.setString("Slot "+std::to_string(current+1)+" / "+std::to_string(slotCount)+"   |   "+s.day+"   |   Period "+std::to_string(s.period));
-            status.setString(s.clash?"CLASH FLAGGED — red entries need review":"VALID SLOT — no clash flag reported");
+            status.setString(s.clash?"CLASH FLAGGED — red entries need review":"VALID SLOT — no clash reported");
             status.setFillColor(s.clash?sf::Color(190,35,40):sf::Color(20,135,65));
             std::ostringstream rows,rec;
             rows<<"SUBJECT | SECTION | FACULTY | VENUE | LENGTH\n\n";
@@ -184,10 +204,7 @@ int main(int argc,char**argv){
                 Entry&e=s.rows[i];
                 rows<<(e.clash?"[CLASH] ":"[OK] ")<<e.subject<<" | "<<e.section<<" | "<<e.faculty<<" | "<<e.venue<<" | "<<e.duration<<" period(s)\n";
                 if(e.clash){
-                    rec<<e.subject<<" ("<<e.section<<"): ";
-                    if(!e.recommendation.empty())rec<<e.recommendation;
-                    else rec<<"No specific fix supplied; check alternate free period, faculty, or room.";
-                    rec<<"\n";
+                    rec<<e.subject<<" ("<<e.section<<"): "<<e.recommendation<<"\n";
                 }
             }
             tableText.setString(rows.str());recText.setString(rec.str().empty()?"No clash recommendations for this slot.":rec.str());
