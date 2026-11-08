@@ -1,0 +1,11 @@
+# Compiled programs
+*.exe
+*.o
+*.obj
+
+# Folders made by the tests while they run
+tests_tmp/
+tests/tests_tmp/
+
+# Build folders
+build/
