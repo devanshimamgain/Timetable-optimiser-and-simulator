@@ -1,6 +1,98 @@
 section_id,name,strength
-A,Section A,60
-B,Section B,58
-C,Section C,62
-D,Section D,60
-E,Section E,61
+A,B.Tech CSE III Sem - Section A,60
+A-G1,A Group 1,30
+A-G2,A Group 2,30
+A-TCS346,A elective TCS346,20
+A-TCS351,A elective TCS351,20
+A-TCS392,A elective TCS392,20
+B,B.Tech CSE III Sem - Section B,60
+B-G1,B Group 1,30
+B-G2,B Group 2,30
+B-TCS346,B elective TCS346,20
+B-TCS351,B elective TCS351,20
+B-TCS392,B elective TCS392,20
+C,B.Tech CSE III Sem - Section C,60
+C-G1,C Group 1,30
+C-G2,C Group 2,30
+C-TCS346,C elective TCS346,20
+C-TCS351,C elective TCS351,20
+C-TCS392,C elective TCS392,20
+D,B.Tech CSE III Sem - Section D,60
+D-G1,D Group 1,30
+D-G2,D Group 2,30
+D-TCS346,D elective TCS346,20
+D-TCS351,D elective TCS351,20
+D-TCS392,D elective TCS392,20
+E,B.Tech CSE III Sem - Section E,60
+E-G1,E Group 1,30
+E-G2,E Group 2,30
+E-TCS346,E elective TCS346,20
+E-TCS351,E elective TCS351,20
+E-TCS392,E elective TCS392,20
+F,B.Tech CSE III Sem - Section F,60
+F-G1,F Group 1,30
+F-G2,F Group 2,30
+F-TCS346,F elective TCS346,20
+F-TCS351,F elective TCS351,20
+F-TCS392,F elective TCS392,20
+G,B.Tech CSE III Sem - Section G,60
+G-G2,G Group 2,30
+G-G1,G Group 1,30
+G-TCS346,G elective TCS346,20
+G-TCS351,G elective TCS351,20
+G-TCS392,G elective TCS392,20
+H,B.Tech CSE III Sem - Section H,60
+H-G1,H Group 1,30
+H-G2,H Group 2,30
+H-TCS346,H elective TCS346,20
+H-TCS351,H elective TCS351,20
+H-TCS392,H elective TCS392,20
+I,B.Tech CSE III Sem - Section I,60
+I-G1,I Group 1,30
+I-G2,I Group 2,30
+I-TCS346,I elective TCS346,20
+I-TCS351,I elective TCS351,20
+I-TCS392,I elective TCS392,20
+ML1,B.Tech CSE III Sem - Section ML1,60
+ML1-G1,ML1 Group 1,30
+ML1-G3,ML1 Group 3,30
+ML1-G2,ML1 Group 2,30
+ML1-TCS349,ML1 elective TCS349,60
+ML2,B.Tech CSE III Sem - Section ML2,60
+ML2-G1,ML2 Group 1,30
+ML2-G3,ML2 Group 3,30
+ML2-G2,ML2 Group 2,30
+ML2-TCS349,ML2 elective TCS349,60
+ML3,B.Tech CSE III Sem - Section ML3,60
+ML3-G1,ML3 Group 1,30
+ML3-G2,ML3 Group 2,30
+ML3-G3,ML3 Group 3,30
+ML3-TCS349,ML3 elective TCS349,60
+ML4,B.Tech CSE III Sem - Section ML4,60
+ML4-G1,ML4 Group 1,30
+ML4-G3,ML4 Group 3,30
+ML4-G2,ML4 Group 2,30
+ML4-TCS349,ML4 elective TCS349,60
+ML5,B.Tech CSE III Sem - Section ML5,60
+ML5-G1,ML5 Group 1,30
+ML5-G2,ML5 Group 2,30
+ML5-G3,ML5 Group 3,30
+ML5-TCS349,ML5 elective TCS349,60
+ML6,B.Tech CSE III Sem - Section ML6,60
+ML6-G1,ML6 Group 1,30
+ML6-G3,ML6 Group 3,30
+ML6-G2,ML6 Group 2,30
+ML6-TCS349,ML6 elective TCS349,60
+DS1,B.Tech CSE III Sem - Section DS1,60
+DS1-G1,DS1 Group 1,30
+DS1-G2,DS1 Group 2,30
+DS1-TCS342,DS1 elective TCS342,60
+DS2,B.Tech CSE III Sem - Section DS2,60
+DS2-G1,DS2 Group 1,30
+DS2-G2,DS2 Group 2,30
+DS2-TCS342,DS2 elective TCS342,60
+CS1,B.Tech CSE III Sem - Section CS1,60
+CS1-G2,CS1 Group 2,30
+CS1-G1,CS1 Group 1,30
+CS1-TCS346,CS1 elective TCS346,30
+CS1-TCS392,CS1 elective TCS392,30

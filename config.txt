@@ -1,0 +1,6 @@
+# Rules and settings read at start-up. Any key may be removed.
+day_order=Monday,Tuesday,Wednesday,Thursday,Friday,Saturday
+auditorium_type=auditorium
+max_sections_in_auditorium=6
+check_capacity=no
+# threads=4

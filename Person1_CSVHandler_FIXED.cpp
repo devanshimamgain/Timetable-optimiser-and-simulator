@@ -60,6 +60,9 @@ TimetableEntry* timetableTail = nullptr;
 MergedGroup* mergedGroupHead = nullptr;
 MergedGroup* mergedGroupTail = nullptr;
 
+// Number of slots in one day, read from slots.csv. 0 = no slots file, so no upper limit is checked.
+int slotCount = 0;
+
 
 
 string trim(const string& s) {
@@ -466,6 +469,45 @@ void loadMergedGroupsCSV() {
     cout << "RESULT: Loaded " << successCount << " | Rejected " << rejectCount << "\n";
 }
 
+// Reads slots.csv (slot,start,end). The number of rows is the number of slots in a day.
+void loadSlotsCSV() {
+    cout << "\n--- Loading slots.csv ---\n";
+
+    ifstream file("slots.csv");
+    if (!file.is_open()) {
+        cout << "INFO: slots.csv not found (optional), slot numbers are not limited\n";
+        return;
+    }
+
+    string line;
+    int rowNum = 0;
+    int successCount = 0;
+    int rejectCount = 0;
+    slotCount = 0;
+
+    getline(file, line);
+
+    while (getline(file, line)) {
+        rowNum++;
+
+        if (isBlank(line)) continue;
+
+        string fields[3];
+        int slot;
+        if (!splitCSV(line, fields, 3) || !validatePositiveInt(fields[0], slot)) {
+            cout << "  Row " << rowNum << ": REJECTED - Invalid slot row\n";
+            rejectCount++;
+            continue;
+        }
+
+        if (slot > slotCount) slotCount = slot;
+        successCount++;
+    }
+
+    file.close();
+    cout << "RESULT: Loaded " << successCount << " slots | Rejected " << rejectCount << "\n";
+}
+
 void loadTimetableCSV() {
     cout << "\n--- Loading timetable.csv ---\n";
     
@@ -510,15 +552,15 @@ void loadTimetableCSV() {
         }
         
         int slot;
-        if (!validatePositiveInt(slotStr, slot) || slot > 10) {
+        if (!validatePositiveInt(slotStr, slot) || (slotCount > 0 && slot > slotCount)) {
             cout << "  Row " << rowNum << ": REJECTED - Invalid slot: " << slotStr << "\n";
             rejectCount++;
             continue;
         }
         
         int duration;
-        if (!validatePositiveInt(durationStr, duration) || duration > 2) {
-            cout << "  Row " << rowNum << ": REJECTED - Invalid duration: " << durationStr << "\n";
+        if (!validatePositiveInt(durationStr, duration) || (slotCount > 0 && slot + duration - 1 > slotCount)) {
+            cout << "  Row " << rowNum << ": REJECTED - Invalid duration (class goes past the last slot): " << durationStr << "\n";
             rejectCount++;
             continue;
         }
@@ -560,6 +602,7 @@ void loadAllCSVFiles() {
     loadSectionsCSV();
     loadVenuesCSV();
     loadMergedGroupsCSV();
+    loadSlotsCSV();
     loadTimetableCSV();
     
     cout << "\nCSV loading complete!\n";
