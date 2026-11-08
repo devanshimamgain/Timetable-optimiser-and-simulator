@@ -3,26 +3,6 @@
 #undef main
 const int MAX_ENTRIES = 50;
 
-// University rules, read from config.txt (see data/data_full/config.txt). 0 or empty = no rule.
-int maxMergeAud = 0;
-string auditoriumType = "";
-
-void loadMergeConfig() {
-    ifstream file("config.txt");
-    if (!file.is_open()) return;
-    string line;
-    while (getline(file, line)) {
-        line = trim(line);
-        if (line.empty() || line[0] == '#') continue;
-        size_t eq = line.find('=');
-        if (eq == string::npos) continue;
-        string key = trim(line.substr(0, eq));
-        string val = trim(line.substr(eq + 1));
-        if (key == "max_sections_in_auditorium") maxMergeAud = atoi(val.c_str());
-        else if (key == "auditorium_type") auditoriumType = val;
-    }
-}
-
 struct SlotEntry {
     string section;
     string subject;
@@ -172,7 +152,7 @@ private:
         Venue* v = searchVenueById(entries[g->getMember(0)].venue);
         if (v == nullptr)
             g->setInvalid("unknown venue");
-        else if (maxMergeAud > 0 && !auditoriumType.empty() && v->type == auditoriumType && g->getCount() > maxMergeAud)
+        else if (maxAudSections > 0 && !auditoriumType.empty() && v->type == auditoriumType && g->getCount() > maxAudSections)
             g->setInvalid("too many sections in auditorium (limit from config.txt)");
         else if (total > v->capacity)
             g->setInvalid("venue capacity exceeded");
@@ -250,7 +230,6 @@ int collectSlotEntries(const string& day, int slot, SlotEntry out[], int maxCoun
 
 int main() {
     loadAllCSVFiles();
-    loadMergeConfig();
 
     const string days[] = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
  

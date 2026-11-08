@@ -63,6 +63,10 @@ MergedGroup* mergedGroupTail = nullptr;
 // Number of slots in one day, read from slots.csv. 0 = no slots file, so no upper limit is checked.
 int slotCount = 0;
 
+// University rules, read from config.txt (see data/data_full/config.txt). 0 or empty = no rule.
+int maxAudSections = 0;
+string auditoriumType = "";
+
 
 
 string trim(const string& s) {
@@ -593,7 +597,26 @@ void loadTimetableCSV() {
     cout << "RESULT: Loaded " << successCount << " | Rejected " << rejectCount << "\n";
 }
 
+// Reads config.txt (optional) for the auditorium rule.
+void loadConfigFile() {
+    ifstream file("config.txt");
+    if (!file.is_open()) return;
+    string line;
+    while (getline(file, line)) {
+        line = trim(line);
+        if (line.empty() || line[0] == '#') continue;
+        size_t eq = line.find('=');
+        if (eq == string::npos) continue;
+        string key = trim(line.substr(0, eq));
+        string val = trim(line.substr(eq + 1));
+        if (key == "max_sections_in_auditorium") maxAudSections = atoi(val.c_str());
+        else if (key == "auditorium_type") auditoriumType = val;
+    }
+    file.close();
+}
+
 void loadAllCSVFiles() {
+    loadConfigFile();
     cout << "\n========================================\n";
     cout << "LOADING ALL CSV FILES\n";
     cout << "========================================\n";
