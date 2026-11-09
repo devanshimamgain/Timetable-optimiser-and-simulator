@@ -11,7 +11,7 @@
 // Person 4 includes this file with GI_NO_MAIN defined and uses the functions below.
 
 #define main person1_main
-#include "Person1_CSVHandler_FIXED.cpp"
+#include "person1_file_handling.cpp"
 #undef main
 
 const int MAX_CLASHES = 5000;            // room for the problems of one run
