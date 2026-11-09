@@ -7,8 +7,8 @@
 //   g++ -std=c++17 -Wall -Wextra tests/run_tests.cpp -o run_tests.exe
 //   ./run_tests.exe
 
-#define GI_NO_MAIN
-#include "../gi.cpp"
+#define MULTIT_NO_MAIN
+#include "../multit.cpp"
 
 #include <cstdio>
 #include <cstdlib>

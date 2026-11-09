@@ -1,6 +1,6 @@
 // Person 4: timetable table, simulator and the menu (console, no graphics library)
 //
-// Uses Person 1 (loading the CSV files), and Person 3 (clash check, spoil, optimise) from gi.cpp.
+// Uses Person 1 (loading the CSV files), and Person 3 (clash check, spoil, optimise) from multit.cpp.
 //
 // Compile: g++ -std=c++17 -Wall -Wextra person4_simulator.cpp -o simulator.exe
 // Run (in the folder that has the CSV files): ./simulator.exe
@@ -13,8 +13,8 @@
 //   5 simulate slot by slot (n = next, p = previous, r = reset, q = back to menu)
 //   0 exit
 
-#define GI_NO_MAIN            // gi.cpp has its own main(); this file has its own
-#include "gi.cpp"
+#define MULTIT_NO_MAIN            // multit.cpp has its own main(); this file has its own
+#include "multit.cpp"
 
 #include <iomanip>
 #include <iostream>
