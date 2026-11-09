@@ -1,19 +1,3 @@
-// person1_file_handling.cpp  (Person 1: loading and checking the data)
-//
-// What this file does:
-//   1. Reads the CSV files in the data folder.
-//   2. Checks every row. A bad row is skipped, and the reason is printed.
-//   3. Keeps the good rows in linked lists, one list for each kind of record.
-//   4. Reads config.txt (auditorium rule) and slots.csv (number of slots in a day).
-//
-// The other modules use these names, so please keep them:
-//   loadAllCSVFiles(), freeAllMemory(), the list heads (facultyHead, sectionHead, ...),
-//   slotCount, maxAudSections, auditoriumType, and the search functions.
-//
-// Check it on its own:
-//   g++ -std=c++17 -Wall -Wextra person1_file_handling.cpp -o person1.exe
-//   (run it in the folder that has the CSV files)
-
 #include <cctype>
 #include <cstdlib>
 #include <fstream>
@@ -22,9 +6,6 @@
 #include <string>
 using namespace std;
 
-// ==================================================================================
-// RECORDS  (every record is a node in a linked list; next points to the next node)
-// ==================================================================================
 struct Faculty {
     string id;
     string name;
@@ -63,9 +44,7 @@ struct MergedGroup {
     MergedGroup* next;
 };
 
-// ==================================================================================
-// GLOBAL DATA
-// ==================================================================================
+
 Faculty* facultyHead = nullptr;
 Faculty* facultyTail = nullptr;
 
@@ -80,19 +59,11 @@ TimetableEntry* timetableTail = nullptr;
 
 MergedGroup* mergedGroupHead = nullptr;
 MergedGroup* mergedGroupTail = nullptr;
-
-// Number of slots in one day, from slots.csv. 0 = no slots file, so slot numbers are not limited.
 int slotCount = 0;
 
-// Auditorium rule, from config.txt. 0 or empty = no rule.
 int maxAudSections = 0;
 string auditoriumType = "";
 
-// ==================================================================================
-// SMALL HELPERS
-// ==================================================================================
-
-// Removes spaces and tabs from the start and the end of a text.
 string trim(const string& s) {
     size_t start = 0;
     size_t end = s.size();
@@ -105,7 +76,6 @@ bool isBlank(const string& s) {
     return trim(s).empty();
 }
 
-// Is the text a whole number above 0? If yes, the number is stored in out.
 bool validatePositiveInt(const string& s, int& out) {
     string text = trim(s);
     if (text.empty()) return false;
@@ -119,7 +89,6 @@ bool validatePositiveInt(const string& s, int& out) {
     return true;
 }
 
-// Splits one CSV line at the commas. It must give exactly `expected` fields.
 bool splitCSV(const string& line, string out[], int expected) {
     int count = 0;
     size_t start = 0;
@@ -137,9 +106,6 @@ bool splitCSV(const string& line, string out[], int expected) {
     return count == expected;
 }
 
-// ==================================================================================
-// SEARCH  (walk the list from the start until the id is found)
-// ==================================================================================
 Faculty* searchFacultyById(const string& id) {
     for (Faculty* p = facultyHead; p != nullptr; p = p->next)
         if (p->id == id) return p;
@@ -164,7 +130,6 @@ MergedGroup* searchMergedGroupById(const string& id) {
     return nullptr;
 }
 
-// Every section in "A;B;C" must exist, and there must be at least one.
 bool validateSectionList(const string& sectionIds) {
     stringstream ss(sectionIds);
     string id;
@@ -177,10 +142,6 @@ bool validateSectionList(const string& sectionIds) {
     }
     return foundAny;
 }
-
-// ==================================================================================
-// ADD TO THE END OF A LIST  (the tail pointer makes this fast)
-// ==================================================================================
 void addFaculty(const string& id, const string& name) {
     Faculty* node = new Faculty{ id, name, nullptr };
     if (facultyTail == nullptr) facultyHead = node;
@@ -219,11 +180,6 @@ void addMergedGroup(const string& id, const string& sectionIds) {
     mergedGroupTail = node;
 }
 
-// ==================================================================================
-// ROW CHECKS
-// Each function checks one row (its fields are in f[0], f[1], ...).
-// It returns "" when the row is good, or the reason why the row is bad.
-// ==================================================================================
 string checkFacultyRow(const string* f) {
     if (f[0].empty() || f[1].empty()) return "empty faculty ID or name";
     if (searchFacultyById(f[0]) != nullptr) return "duplicate faculty ID: " + f[0];
@@ -257,7 +213,6 @@ string checkMergedGroupRow(const string* f) {
     return "";
 }
 
-// slots.csv: slot,start,end. The biggest slot number becomes slotCount.
 string checkSlotRow(const string* f) {
     int slot;
     if (!validatePositiveInt(f[0], slot)) return "invalid slot number: " + f[0];
@@ -296,13 +251,6 @@ string checkTimetableRow(const string* f) {
     return "";
 }
 
-// ==================================================================================
-// FILE READING
-// ==================================================================================
-
-// Reads one CSV file. The first line is the header and is skipped.
-// Every other non-empty line is checked with rowFn. Bad rows are printed and skipped.
-// An optional file that is missing is not an error.
 void loadCsvFile(const string& fileName, int columns, bool optional, string (*rowFn)(const string*)) {
     cout << "\n--- Loading " << fileName << " ---\n";
 
@@ -340,8 +288,6 @@ void loadCsvFile(const string& fileName, int columns, bool optional, string (*ro
     file.close();
     cout << "RESULT: Loaded " << loaded << " | Rejected " << rejected << "\n";
 }
-
-// Reads config.txt (optional). Lines look like: key=value. Lines that start with # are comments.
 void loadConfigFile() {
     ifstream file("config.txt");
     if (!file.is_open()) return;
@@ -362,8 +308,6 @@ void loadConfigFile() {
     file.close();
 }
 
-// Loads every file of the data folder, in the right order.
-// The order matters: a timetable row refers to faculty, sections and venues, so they come first.
 void loadAllCSVFiles() {
     loadConfigFile();
     slotCount = 0;                                     // slots.csv sets it again if the file exists
@@ -381,10 +325,6 @@ void loadAllCSVFiles() {
 
     cout << "\nCSV loading complete!\n";
 }
-
-// ==================================================================================
-// MEMORY CLEANUP  (delete every node, so that nothing is left in memory)
-// ==================================================================================
 void freeAllMemory() {
     while (facultyHead != nullptr) {
         Faculty* temp = facultyHead;
@@ -421,10 +361,6 @@ void freeAllMemory() {
     }
     mergedGroupTail = nullptr;
 }
-
-// ==================================================================================
-// STAND-ALONE CHECK  (only used when this file is compiled on its own)
-// ==================================================================================
 int main() {
     loadAllCSVFiles();
 
