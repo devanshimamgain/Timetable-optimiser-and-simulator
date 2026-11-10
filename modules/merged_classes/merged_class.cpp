@@ -1,6 +1,5 @@
-#define main person1_main
-#include "../person1_file_handling.cpp"
-#undef main
+#include "merged_class.h"
+#include "file_handling/person1_file_handling.h"
 const int MAX_ENTRIES = 50;
 
 struct SlotEntry {
