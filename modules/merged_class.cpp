@@ -228,8 +228,7 @@ int collectSlotEntries(const string& day, int slot, SlotEntry out[], int maxCoun
     return n;
 }
 
-int main() {
-    loadAllCSVFiles();
+void showMergedClasses() {
 
     const string days[] = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
  
@@ -261,6 +260,13 @@ int main() {
     cout << "\nTotal merged classes: " << totalGroups
          << "   Invalid: " << invalidGroups << "\n";
  
+}
+
+#ifdef MERGE_TEST_MAIN
+int main() {
+    loadAllCSVFiles();
+    showMergedClasses();
     freeAllMemory();
     return 0;
 }
+#endif

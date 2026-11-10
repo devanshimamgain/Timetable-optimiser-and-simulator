@@ -15,7 +15,7 @@
 
 #define MULTIT_NO_MAIN            // multit.cpp has its own main(); this file has its own
 #include "multit.cpp"
-
+#include "modules/merged_class.cpp"
 #include <iomanip>
 #include <iostream>
 #include <string>
@@ -192,7 +192,7 @@ int main() {
     while (true) {
         cout << "\n===== MENU =====\n"
              << "1 Show a section's timetable\n2 Check clashes\n3 Spoil timetable (demo)\n"
-             << "4 Optimise (fix clashes)\n5 Simulate\n0 Exit\n";
+             << "4 Optimise (fix clashes)\n5 Simulate\n6 Show merged classes\n0 Exit\n";
         string choice = askLine("Choose: ");
         if (choice.empty()) break;
         char c = choice[0];
@@ -212,8 +212,10 @@ int main() {
             optimise();
         } else if (c == '5') {
             runSimulation();
+        } else if (c == '6') {
+            showMergedClasses();
         } else {
-            cout << "Choose 0 to 5.\n";
+            cout << "Choose 0 to 6.\n";
         }
     }
     freeAllMemory();
