@@ -16,6 +16,7 @@
 #define main person1_main
 #include "person1_file_handling.cpp"
 #undef main
+#include "modules/merged_class.cpp"           // Person 2: merged classes and their room rules
 
 #include <cstddef>
 
@@ -63,12 +64,22 @@ int dayListCount = 0;
 ClashInfo threadClashes[MAX_THREADS][MAX_CLASHES_PER_THREAD];
 int threadClashCount[MAX_THREADS];
 int threadsInUse = 1;
+int threadDropped[MAX_THREADS];          // problems a thread could not store (list full)
+
+// Number of merged classes found by Person 2's check in the last run.
+int mergedGroupCount = 0;
 
 // ---------------------------------------------------------------- basic helpers
 void collectEntries() {
     listCount = 0;
-    for (TimetableEntry* t = timetableHead; t != nullptr && listCount < MAX_TIMETABLE; t = t->next)
-        listEntries[listCount++] = t;
+    int total = 0;
+    for (TimetableEntry* t = timetableHead; t != nullptr; t = t->next) {
+        total++;
+        if (listCount < MAX_TIMETABLE) listEntries[listCount++] = t;
+    }
+    if (total > MAX_TIMETABLE)
+        cout << "WARNING: " << total << " classes found, only the first " << MAX_TIMETABLE
+             << " are checked. Increase MAX_TIMETABLE." << endl;
 }
 
 int indexOf(const TimetableEntry* t) {
@@ -228,7 +239,10 @@ static void runOnThreads(int count, WorkFunction work) {
 // ---------------------------------------------------------------- clash check
 // Stores one problem found by thread t.
 void addThreadClash(int t, const string& kind, const string& text, TimetableEntry* a, TimetableEntry* b) {
-    if (threadClashCount[t] >= MAX_CLASHES_PER_THREAD) return;
+    if (threadClashCount[t] >= MAX_CLASHES_PER_THREAD) {
+        threadDropped[t]++;
+        return;
+    }
     ClashInfo& c = threadClashes[t][threadClashCount[t]++];
     c.day = a->day;
     c.slot = (b->startSlot > a->startSlot) ? b->startSlot : a->startSlot;
@@ -242,6 +256,7 @@ void addThreadClash(int t, const string& kind, const string& text, TimetableEntr
 // It only reads the shared data, and writes into its own part of threadClashes.
 void checkPairsWorker(int t) {
     threadClashCount[t] = 0;
+    threadDropped[t] = 0;
     for (int i = t; i < listCount; i += threadsInUse) {
         for (int j = i + 1; j < listCount; j++) {
             TimetableEntry* a = listEntries[i];
@@ -272,6 +287,25 @@ void checkPairsWorker(int t) {
 
 // Checks every pair of classes. The work is shared between the threads, then the
 // results of all threads are put together into clashes[].
+// Adds one problem to the main clash list (used for the merged-class problems).
+void addMainClash(const string& kind, const string& text, TimetableEntry* a) {
+    if (clashCount >= MAX_CLASHES) return;
+    ClashInfo& c = clashes[clashCount++];
+    c.day = a->day;
+    c.slot = a->startSlot;
+    c.kind = kind;
+    c.text = text;
+    c.a = a;
+    c.b = nullptr;
+}
+
+// Turns the reason of an invalid merged group into a clash kind.
+string mergeProblemKind(const string& reason) {
+    if (reason.find("capacity") != string::npos) return "CAPACITY";
+    if (reason.find("auditorium") != string::npos) return "MERGE-RULE";
+    return "MERGED";
+}
+
 void runClashCheck() {
     clashCount = 0;
     collectEntries();
@@ -285,9 +319,28 @@ void runClashCheck() {
 
     runOnThreads(threadsInUse, checkPairsWorker);
 
-    for (int t = 0; t < threadsInUse; t++)
+    int dropped = 0;
+    for (int t = 0; t < threadsInUse; t++) {
+        dropped += threadDropped[t];
         for (int k = 0; k < threadClashCount[t] && clashCount < MAX_CLASHES; k++)
             clashes[clashCount++] = threadClashes[t][k];
+        if (threadClashCount[t] > 0 && clashCount >= MAX_CLASHES) dropped++;
+    }
+    if (dropped > 0)
+        cout << "WARNING: " << dropped << " clash(es) were not stored (list full). Increase the limits." << endl;
+
+    // Person 2: merged classes, slot by slot. Invalid groups become clashes.
+    if (dayListCount == 0) buildDayList();
+    mergedGroupCount = 0;
+    int last = lastSlotNumber();
+    MergeProblem problems[200];
+    for (int d = 0; d < dayListCount; d++)
+        for (int s = 1; s <= last; s++) {
+            int badGroups = 0;
+            mergedGroupCount += checkMergedClassesInSlot(dayList[d], s, problems, 200, badGroups);
+            for (int k = 0; k < badGroups; k++)
+                addMainClash(mergeProblemKind(problems[k].reason), problems[k].reason, problems[k].row);
+        }
 }
 
 // True when this class is part of at least one clash.
@@ -299,6 +352,7 @@ bool hasClash(const TimetableEntry* t) {
 
 void printClashes() {
     cout << "\n===== CLASH CHECK (threads used: " << threadsInUse << ") =====\n";
+    cout << "Merged classes found: " << mergedGroupCount << "\n";
     if (clashCount == 0) {
         cout << "No clashes found.\n";
         return;

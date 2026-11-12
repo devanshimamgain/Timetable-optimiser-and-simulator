@@ -422,9 +422,6 @@ void freeAllMemory() {
     mergedGroupTail = nullptr;
 }
 
-// ==================================================================================
-// STAND-ALONE CHECK  (only used when this file is compiled on its own)
-// ==================================================================================
 int main() {
     loadAllCSVFiles();
 

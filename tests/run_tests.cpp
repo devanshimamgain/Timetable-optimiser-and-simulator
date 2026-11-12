@@ -157,7 +157,7 @@ void testClashKinds() {
         {"room clash", "Monday,1,1,S1,MATH,F1,R1\nMonday,1,1,S2,PHY,F2,R1\n", "VENUE", 1},
         {"overlap by length", "Monday,1,2,S1,MATH,F1,R1\nMonday,2,1,S1,PHY,F2,R2\n", "SECTION", 1},
         {"same room, other slot", "Monday,1,1,S1,MATH,F1,R1\nMonday,2,1,S1,PHY,F2,R1\n", "NONE", 0},
-        {"merged class is not a clash", "Monday,1,1,S1,MATH,F1,R1\nMonday,1,1,S2,MATH,F1,R1\n", "NONE", 0},
+        {"merged class is not a clash", "Monday,1,1,S1,MATH,F1,R1\nMonday,1,1,S2,MATH,F1,R1\n", "MERGED", 1},
     };
     for (const ClashCase& c : cases) {
         printf("  %s\n", c.name);
@@ -165,8 +165,17 @@ void testClashKinds() {
         resetState();
         setupBase(c.rows);
         loadAndCheck();
-        if (std::string(c.kind) == "NONE") CHECK(clashCount == 0);
-        else CHECK(countKind(c.kind) == c.expect);
+        if (std::string(c.kind) == "NONE") {
+            CHECK(clashCount == 0);
+        } else if (std::string(c.kind) == "MERGED") {
+            // the two rows are one merged class: no section, teacher or room clash,
+            // and it is found as one group; 50 + 50 students do not fit in R1 (60 seats)
+            CHECK(countKind("SECTION") + countKind("FACULTY") + countKind("VENUE") == 0);
+            CHECK(mergedGroupCount == 1);
+            CHECK(countKind("CAPACITY") == 1);
+        } else {
+            CHECK(countKind(c.kind) == c.expect);
+        }
         leaveDir();
     }
 }
