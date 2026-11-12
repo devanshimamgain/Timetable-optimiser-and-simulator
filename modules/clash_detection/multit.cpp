@@ -1,124 +1,158 @@
-#include "clashdetect.h"
-#include <algorithm>
-#include <cstdlib>
-#include <functional>
-#include <iostream>
-#include <thread>
-#include <vector>
+// multit.cpp  (Person 3: clash detection on several threads, spoil demo and optimiser)
+//
+// Works on the timetable that Person 1 loads (person1_file_handling.cpp):
+//   runClashCheck()   finds SECTION, FACULTY and VENUE clashes. The pairs of classes are split
+//                     between several threads, which run at the same time.
+//                     Two classes that are the same class for several sections are a MERGED
+//                     class, not a clash.
+//   spoilTimetable()  demo: moves some classes on purpose so that clashes appear
+//   optimise()        fixes the clashes: first another room, then another time.
+//                     A move that does not reduce the clashes is undone.
+//
+// Compile on Windows (MinGW):  g++ -std=c++17 -Wall -Wextra multit.cpp -o multit.exe
+// Compile on Linux / macOS:    g++ -std=c++17 -Wall -Wextra -pthread multit.cpp -o multit
+// Person 4 includes this file with MULTIT_NO_MAIN defined.
 
-using namespace std;
+#define main person1_main
+#include "../file_handling/person1_file_handling.cpp"
+#undef main
+#include "../merged_classes/merged_class.cpp"           // Person 2: merged classes and their room rules
 
-namespace {
+#include <cstddef>
 
-const int MAX_THREADS = 8;
-const int MAX_SECTIONS_PER_CLASS = 20;
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#else
+#include <pthread.h>
+#include <unistd.h>
+#endif
 
-vector<TimetableEntry*> listEntries;
-vector<ClashInfo> clashes;
-vector<string> dayList;
+const int MAX_CLASHES = 5000;                  // room for the problems of one run
+const int MAX_CLASHES_PER_THREAD = 2000;       // room for the problems one thread finds
+const int MAX_SECTIONS_PER_CLASS = 20;         // most sections that one class can have
+const int MAX_TIMETABLE = 1000;                // most classes the checker and optimiser handle
+const int MAX_DAY_LIST = 7;
+const int MAX_THREADS = 8;                     // most threads used for the clash check
+
+struct ClashInfo {
+    string day;
+    int slot;                                  // the later of the two starting slots
+    string kind;                               // SECTION, FACULTY or VENUE
+    string text;                               // what is wrong, in words
+    TimetableEntry* a;
+    TimetableEntry* b;
+};
+
+ClashInfo clashes[MAX_CLASHES];
+int clashCount = 0;
+
+// The classes in one array, so that the checker can use indexes (0 .. listCount-1).
+TimetableEntry* listEntries[MAX_TIMETABLE];
+int listCount = 0;
+string secOf[MAX_TIMETABLE][MAX_SECTIONS_PER_CLASS];   // section ids of each class
+int secCount[MAX_TIMETABLE];
+
+// Days in the order they first appear in timetable.csv.
+string dayList[MAX_DAY_LIST];
+int dayListCount = 0;
+
+// Every thread writes its own problems here, so the threads never write to the same place.
+ClashInfo threadClashes[MAX_THREADS][MAX_CLASHES_PER_THREAD];
+int threadClashCount[MAX_THREADS];
 int threadsInUse = 1;
+int threadDropped[MAX_THREADS];          // problems a thread could not store (list full)
 
-// Collect the linked-list timetable into a vector for indexed pair checking.
+// Number of merged classes found by Person 2's check in the last run.
+int mergedGroupCount = 0;
+
+// ---------------------------------------------------------------- basic helpers
 void collectEntries() {
-    listEntries.clear();
-
-    for (TimetableEntry* t = timetableHead;
-         t != nullptr;
-         t = t->next) {
-        listEntries.push_back(t);
+    listCount = 0;
+    int total = 0;
+    for (TimetableEntry* t = timetableHead; t != nullptr; t = t->next) {
+        total++;
+        if (listCount < MAX_TIMETABLE) listEntries[listCount++] = t;
     }
+    if (total > MAX_TIMETABLE)
+        cout << "WARNING: " << total << " classes found, only the first " << MAX_TIMETABLE
+             << " are checked. Increase MAX_TIMETABLE." << endl;
 }
 
-int indexOf(const TimetableEntry* entry) {
-    for (size_t i = 0; i < listEntries.size(); ++i) {
-        if (listEntries[i] == entry)
-            return static_cast<int>(i);
-    }
+int indexOf(const TimetableEntry* t) {
+    for (int i = 0; i < listCount; i++) if (listEntries[i] == t) return i;
     return -1;
 }
 
-// Keep days in the order in which they first appear in timetable.csv.
 void buildDayList() {
-    dayList.clear();
-
+    dayListCount = 0;
     for (TimetableEntry* t = timetableHead; t != nullptr; t = t->next) {
-        if (find(dayList.begin(), dayList.end(), t->day) == dayList.end())
-            dayList.push_back(t->day);
+        bool known = false;
+        for (int i = 0; i < dayListCount; i++) if (dayList[i] == t->day) known = true;
+        if (!known && dayListCount < MAX_DAY_LIST) dayList[dayListCount++] = t->day;
     }
 }
 
+// The last slot of a day: from slots.csv if it exists, otherwise from the timetable itself.
 int lastSlotNumber() {
-    if (slotCount > 0)
-        return slotCount;
-
+    if (slotCount > 0) return slotCount;
     int last = 0;
-
-    for (TimetableEntry* t = timetableHead; t != nullptr; t = t->next) {
-        int endSlot = t->startSlot + t->duration - 1;
-        if (endSlot > last)
-            last = endSlot;
-    }
-
+    for (TimetableEntry* t = timetableHead; t != nullptr; t = t->next)
+        if (t->startSlot + t->duration - 1 > last) last = t->startSlot + t->duration - 1;
     return last;
 }
 
-// Return the section IDs represented by an entry.
-// A normal entry has one section ID; a merged-group entry has several.
-vector<string> sectionsOf(const TimetableEntry* entry) {
-    vector<string> result;
-
-    MergedGroup* group = searchMergedGroupById(entry->sectionOrGroup);
-
+// Fills out[] with the section ids of this class: its own id, or every member of its merged group.
+int sectionsOf(const TimetableEntry* t, string out[], int maxCount) {
+    MergedGroup* group = searchMergedGroupById(t->sectionOrGroup);
     if (group == nullptr) {
-        result.push_back(entry->sectionOrGroup);
-        return result;
+        if (maxCount > 0) out[0] = t->sectionOrGroup;
+        return 1;
     }
-
+    int n = 0;
     string current;
     const string& ids = group->sectionIds;
-
-    for (size_t i = 0; i <= ids.size(); ++i) {
+    for (size_t i = 0; i <= ids.size(); i++) {
         if (i == ids.size() || ids[i] == ';') {
             current = trim(current);
-
-            if (!current.empty())
-                result.push_back(current);
-
+            if (!current.empty() && n < maxCount) out[n++] = current;
             current.clear();
         } else {
             current += ids[i];
         }
     }
-
-    return result;
+    return n;
 }
 
-bool sharesSection(const TimetableEntry* a, const TimetableEntry* b) {
-    vector<string> sectionsA = sectionsOf(a);
-    vector<string> sectionsB = sectionsOf(b);
-
-    for (const string& x : sectionsA) {
-        for (const string& y : sectionsB) {
-            if (x == y)
-                return true;
-        }
-    }
-
+// Does this class attend section id? (also true for a merged group that contains the section)
+bool attends(const TimetableEntry* t, const string& id) {
+    string ids[MAX_SECTIONS_PER_CLASS];
+    int n = sectionsOf(t, ids, MAX_SECTIONS_PER_CLASS);
+    for (int i = 0; i < n; i++) if (ids[i] == id) return true;
     return false;
 }
 
-bool overlaps(const TimetableEntry* a, const TimetableEntry* b) {
-    if (a->day != b->day)
-        return false;
-
-    int endA = a->startSlot + a->duration - 1;
-    int endB = b->startSlot + b->duration - 1;
-
-    return a->startSlot <= endB && b->startSlot <= endA;
+// Do the two classes have a section in common?
+bool sharesSection(const TimetableEntry* a, const TimetableEntry* b) {
+    string sa[MAX_SECTIONS_PER_CLASS], sb[MAX_SECTIONS_PER_CLASS];
+    int na = sectionsOf(a, sa, MAX_SECTIONS_PER_CLASS);
+    int nb = sectionsOf(b, sb, MAX_SECTIONS_PER_CLASS);
+    for (int i = 0; i < na; i++)
+        for (int j = 0; j < nb; j++)
+            if (sa[i] == sb[j]) return true;
+    return false;
 }
 
-// Two entries with identical subject, faculty, venue, time and duration
-// represent the same merged class rather than a clash between sections.
+// Do the two classes overlap in time? They must be on the same day and share at least one slot.
+bool overlaps(const TimetableEntry* a, const TimetableEntry* b) {
+    if (a->day != b->day) return false;
+    return a->startSlot <= b->startSlot + b->duration - 1 && b->startSlot <= a->startSlot + a->duration - 1;
+}
+
+// The same class for different sections: same subject, teacher, room, start and length.
 bool sameClass(const TimetableEntry* a, const TimetableEntry* b) {
     return a->subject == b->subject &&
            a->facultyId == b->facultyId &&
@@ -127,500 +161,366 @@ bool sameClass(const TimetableEntry* a, const TimetableEntry* b) {
            a->duration == b->duration;
 }
 
-int strengthOf(const TimetableEntry* entry) {
+// Total students of a class (all its sections together).
+int strengthOf(const TimetableEntry* t) {
+    string ids[MAX_SECTIONS_PER_CLASS];
+    int n = sectionsOf(t, ids, MAX_SECTIONS_PER_CLASS);
     int total = 0;
-    vector<string> ids = sectionsOf(entry);
-
-    for (const string& id : ids) {
-        Section* section = searchSectionById(id);
-        if (section != nullptr)
-            total += section->strength;
+    for (int i = 0; i < n; i++) {
+        Section* s = searchSectionById(ids[i]);
+        if (s) total += s->strength;
     }
-
     return total;
 }
 
-void addClash(vector<ClashInfo>& destination,
-              const string& kind,
-              const string& message,
-              TimetableEntry* a,
-              TimetableEntry* b) {
-    ClashInfo clash;
+// ---------------------------------------------------------------- threads
+typedef void (*WorkFunction)(int threadId);
 
-    clash.day = a->day;
-    clash.slot = max(a->startSlot, b->startSlot);
-    clash.kind = kind;
-    clash.text = message;
-    clash.a = a;
-    clash.b = b;
+struct ThreadJob {
+    WorkFunction work;
+    int id;
+};
 
-    destination.push_back(clash);
+#ifdef _WIN32
+static DWORD WINAPI threadEntry(LPVOID arg) {
+    ThreadJob* job = (ThreadJob*)arg;
+    job->work(job->id);
+    return 0;
 }
 
-// Each worker owns its own result vector, so workers never write to the
-// same vector. The timetable itself is only read during this function.
-void checkPairsWorker(
-    int threadId,
-    int threadCount,
-    const vector<vector<string>>& entrySections,
-    vector<ClashInfo>& workerResults
-) {
-    const int count = static_cast<int>(listEntries.size());
-
-    for (int i = threadId; i < count; i += threadCount) {
-        for (int j = i + 1; j < count; ++j) {
-            TimetableEntry* a = listEntries[i];
-            TimetableEntry* b = listEntries[j];
-
-            if (!overlaps(a, b))
-                continue;
-
-            bool sharedSection = false;
-
-            for (const string& sectionA : entrySections[i]) {
-                for (const string& sectionB : entrySections[j]) {
-                    if (sectionA == sectionB) {
-                        sharedSection = true;
-                        break;
-                    }
-                }
-
-                if (sharedSection)
-                    break;
-            }
-
-            if (sharedSection) {
-                addClash(
-                    workerResults, "SECTION",
-                    a->sectionOrGroup + " has " + a->subject +
-                    " and " + b->subject + " at the same time",
-                    a, b
-                );
-                continue;
-            }
-
-            // Same class delivered to different sections is allowed.
-            if (sameClass(a, b))
-                continue;
-
-            if (a->facultyId == b->facultyId) {
-                addClash(
-                    workerResults, "FACULTY",
-                    a->facultyId + " teaches " + a->subject +
-                    " and " + b->subject + " at the same time",
-                    a, b
-                );
-            }
-
-            if (a->venueId == b->venueId) {
-                addClash(
-                    workerResults, "VENUE",
-                    a->venueId + " is used by " + a->subject +
-                    " and " + b->subject + " at the same time",
-                    a, b
-                );
-            }
-        }
-    }
+static int processorCount() {
+    SYSTEM_INFO info;
+    GetSystemInfo(&info);
+    return (int)info.dwNumberOfProcessors;
 }
 
-bool slotFreeFor(const TimetableEntry* entry,
-                 const string& day,
-                 int start) {
-    if (start < 1 || start + entry->duration - 1 > lastSlotNumber())
-        return false;
-
-    int proposedEnd = start + entry->duration - 1;
-
-    for (TimetableEntry* other = timetableHead;
-         other != nullptr;
-         other = other->next) {
-        if (other == entry || other->day != day)
-            continue;
-
-        int otherEnd = other->startSlot + other->duration - 1;
-
-        if (other->startSlot > proposedEnd || start > otherEnd)
-            continue;
-
-        if (other->facultyId == entry->facultyId ||
-            other->venueId == entry->venueId ||
-            sharesSection(entry, other)) {
-            return false;
-        }
+// Runs work(0), work(1), ... on `count` threads, and waits until all of them are finished.
+static void runOnThreads(int count, WorkFunction work) {
+    HANDLE handles[MAX_THREADS];
+    ThreadJob jobs[MAX_THREADS];
+    bool started[MAX_THREADS];
+    for (int i = 0; i < count; i++) {
+        jobs[i].work = work;
+        jobs[i].id = i;
+        handles[i] = CreateThread(NULL, 0, threadEntry, &jobs[i], 0, NULL);
+        started[i] = (handles[i] != NULL);
+        if (!started[i]) work(i);                  // could not start a thread: do its work here
     }
-
-    return true;
+    for (int i = 0; i < count; i++)
+        if (started[i]) { WaitForSingleObject(handles[i], INFINITE); CloseHandle(handles[i]); }
+}
+#else
+static void* threadEntry(void* arg) {
+    ThreadJob* job = (ThreadJob*)arg;
+    job->work(job->id);
+    return NULL;
 }
 
-bool venueFreeFor(const TimetableEntry* entry,
-                  const string& venueId,
-                  const string& day,
-                  int start) {
-    int proposedEnd = start + entry->duration - 1;
-
-    for (TimetableEntry* other = timetableHead;
-         other != nullptr;
-         other = other->next) {
-        if (other == entry ||
-            other->venueId != venueId ||
-            other->day != day) {
-            continue;
-        }
-
-        int otherEnd = other->startSlot + other->duration - 1;
-
-        if (other->startSlot <= proposedEnd && start <= otherEnd)
-            return false;
-    }
-
-    return true;
+static int processorCount() {
+    return (int)sysconf(_SC_NPROCESSORS_ONLN);
 }
 
-// Try another suitable room first, then another time if allowed.
-bool tryFix(TimetableEntry* entry, const string& kind) {
-    bool roomProblem =
-        kind == "VENUE" || kind == "CAPACITY" || kind == "MERGE-RULE";
-
-    bool roomOnly =
-        kind == "CAPACITY" || kind == "MERGE-RULE";
-
-    if (roomProblem) {
-        int requiredCapacity = strengthOf(entry);
-        Venue* currentVenue = searchVenueById(entry->venueId);
-
-        // First prefer the same venue type, then allow any suitable type.
-        for (int pass = 0; pass < 2; ++pass) {
-            for (Venue* venue = venueHead;
-                 venue != nullptr;
-                 venue = venue->next) {
-                if (currentVenue != nullptr &&
-                    venue->id == currentVenue->id) {
-                    continue;
-                }
-
-                if (venue->capacity < requiredCapacity)
-                    continue;
-
-                if (pass == 0 &&
-                    currentVenue != nullptr &&
-                    venue->type != currentVenue->type) {
-                    continue;
-                }
-
-                if (kind == "MERGE-RULE" &&
-                    !auditoriumType.empty() &&
-                    venue->type == auditoriumType) {
-                    continue;
-                }
-
-                if (venueFreeFor(entry, venue->id,
-                                 entry->day, entry->startSlot)) {
-                    entry->venueId = venue->id;
-                    return true;
-                }
-            }
-        }
+// Runs work(0), work(1), ... on `count` threads, and waits until all of them are finished.
+static void runOnThreads(int count, WorkFunction work) {
+    pthread_t threads[MAX_THREADS];
+    ThreadJob jobs[MAX_THREADS];
+    bool started[MAX_THREADS];
+    for (int i = 0; i < count; i++) {
+        jobs[i].work = work;
+        jobs[i].id = i;
+        started[i] = (pthread_create(&threads[i], NULL, threadEntry, &jobs[i]) == 0);
+        if (!started[i]) work(i);                  // could not start a thread: do its work here
     }
-
-    if (!roomOnly && !dayList.empty()) {
-        int currentDayIndex = 0;
-
-        for (size_t i = 0; i < dayList.size(); ++i) {
-            if (dayList[i] == entry->day) {
-                currentDayIndex = static_cast<int>(i);
-                break;
-            }
-        }
-
-        int last = lastSlotNumber();
-
-        for (size_t offset = 0; offset < dayList.size(); ++offset) {
-            const string& day =
-                dayList[(currentDayIndex + static_cast<int>(offset))
-                        % dayList.size()];
-
-            for (int start = 1; start <= last; ++start) {
-                if (day == entry->day && start == entry->startSlot)
-                    continue;
-
-                if (slotFreeFor(entry, day, start)) {
-                    entry->day = day;
-                    entry->startSlot = start;
-                    return true;
-                }
-            }
-        }
-    }
-
-    return false;
+    for (int i = 0; i < count; i++)
+        if (started[i]) pthread_join(threads[i], NULL);
 }
+#endif
 
-} // namespace
-
-// ================= PUBLIC FUNCTIONS =================
-
-void runClashCheck() {
-    clashes.clear();
-    collectEntries();
-
-    const int count = static_cast<int>(listEntries.size());
-
-    if (count == 0) {
-        threadsInUse = 1;
+// ---------------------------------------------------------------- clash check
+// Stores one problem found by thread t.
+void addThreadClash(int t, const string& kind, const string& text, TimetableEntry* a, TimetableEntry* b) {
+    if (threadClashCount[t] >= MAX_CLASHES_PER_THREAD) {
+        threadDropped[t]++;
         return;
     }
+    ClashInfo& c = threadClashes[t][threadClashCount[t]++];
+    c.day = a->day;
+    c.slot = (b->startSlot > a->startSlot) ? b->startSlot : a->startSlot;
+    c.kind = kind;
+    c.text = text;
+    c.a = a;
+    c.b = b;
+}
 
-    vector<vector<string>> entrySections(count);
+// Thread t checks the pairs (i, j) where i = t, t + threadsInUse, t + 2*threadsInUse, ...
+// It only reads the shared data, and writes into its own part of threadClashes.
+void checkPairsWorker(int t) {
+    threadClashCount[t] = 0;
+    threadDropped[t] = 0;
+    for (int i = t; i < listCount; i += threadsInUse) {
+        for (int j = i + 1; j < listCount; j++) {
+            TimetableEntry* a = listEntries[i];
+            TimetableEntry* b = listEntries[j];
+            if (!overlaps(a, b)) continue;
 
-    for (int i = 0; i < count; ++i)
-        entrySections[i] = sectionsOf(listEntries[i]);
+            bool shared = false;
+            for (int x = 0; x < secCount[i] && !shared; x++)
+                for (int y = 0; y < secCount[j] && !shared; y++)
+                    if (secOf[i][x] == secOf[j][y]) shared = true;
 
-    unsigned int available = thread::hardware_concurrency();
+            if (shared) {
+                addThreadClash(t, "SECTION", a->sectionOrGroup + " has " + a->subject + " and " +
+                               b->subject + " at the same time", a, b);
+                continue;
+            }
+            if (sameClass(a, b)) continue;         // merged class: fine
 
-    threadsInUse = (available == 0) ? 1 : static_cast<int>(available);
-    threadsInUse = min(threadsInUse, MAX_THREADS);
-    threadsInUse = min(threadsInUse, count);
-    threadsInUse = max(threadsInUse, 1);
-
-    vector<vector<ClashInfo>> workerResults(threadsInUse);
-    vector<thread> workers;
-
-    for (int t = 0; t < threadsInUse; ++t) {
-        workers.emplace_back(
-            checkPairsWorker,
-            t,
-            threadsInUse,
-            cref(entrySections),
-            ref(workerResults[t])
-        );
-    }
-
-    for (thread& worker : workers)
-        worker.join();
-
-    for (const vector<ClashInfo>& results : workerResults) {
-        clashes.insert(clashes.end(), results.begin(), results.end());
+            if (a->facultyId == b->facultyId)
+                addThreadClash(t, "FACULTY", a->facultyId + " teaches " + a->subject + " and " +
+                               b->subject + " at the same time", a, b);
+            if (a->venueId == b->venueId)
+                addThreadClash(t, "VENUE", a->venueId + " is used by " + a->subject + " and " +
+                               b->subject + " at the same time", a, b);
+        }
     }
 }
 
-const vector<ClashInfo>& getClashes() {
-    return clashes;
+// Checks every pair of classes. The work is shared between the threads, then the
+// results of all threads are put together into clashes[].
+// Adds one problem to the main clash list (used for the merged-class problems).
+void addMainClash(const string& kind, const string& text, TimetableEntry* a) {
+    if (clashCount >= MAX_CLASHES) return;
+    ClashInfo& c = clashes[clashCount++];
+    c.day = a->day;
+    c.slot = a->startSlot;
+    c.kind = kind;
+    c.text = text;
+    c.a = a;
+    c.b = nullptr;
 }
 
-bool hasClash(const TimetableEntry* entry) {
-    for (const ClashInfo& clash : clashes) {
-        if (clash.a == entry || clash.b == entry)
-            return true;
-    }
+// Turns the reason of an invalid merged group into a clash kind.
+string mergeProblemKind(const string& reason) {
+    if (reason.find("capacity") != string::npos) return "CAPACITY";
+    if (reason.find("auditorium") != string::npos) return "MERGE-RULE";
+    return "MERGED";
+}
 
+void runClashCheck() {
+    clashCount = 0;
+    collectEntries();
+    for (int i = 0; i < listCount; i++)
+        secCount[i] = sectionsOf(listEntries[i], secOf[i], MAX_SECTIONS_PER_CLASS);
+
+    threadsInUse = processorCount();
+    if (threadsInUse > MAX_THREADS) threadsInUse = MAX_THREADS;
+    if (threadsInUse > listCount) threadsInUse = listCount;
+    if (threadsInUse < 1) threadsInUse = 1;
+
+    runOnThreads(threadsInUse, checkPairsWorker);
+
+    int dropped = 0;
+    for (int t = 0; t < threadsInUse; t++) {
+        dropped += threadDropped[t];
+        for (int k = 0; k < threadClashCount[t] && clashCount < MAX_CLASHES; k++)
+            clashes[clashCount++] = threadClashes[t][k];
+        if (threadClashCount[t] > 0 && clashCount >= MAX_CLASHES) dropped++;
+    }
+    if (dropped > 0)
+        cout << "WARNING: " << dropped << " clash(es) were not stored (list full). Increase the limits." << endl;
+
+    // Person 2: merged classes, slot by slot. Invalid groups become clashes.
+    if (dayListCount == 0) buildDayList();
+    mergedGroupCount = 0;
+    int last = lastSlotNumber();
+    MergeProblem problems[200];
+    for (int d = 0; d < dayListCount; d++)
+        for (int s = 1; s <= last; s++) {
+            int badGroups = 0;
+            mergedGroupCount += checkMergedClassesInSlot(dayList[d], s, problems, 200, badGroups);
+            for (int k = 0; k < badGroups; k++)
+                addMainClash(mergeProblemKind(problems[k].reason), problems[k].reason, problems[k].row);
+        }
+}
+
+// True when this class is part of at least one clash.
+bool hasClash(const TimetableEntry* t) {
+    for (int i = 0; i < clashCount; i++)
+        if (clashes[i].a == t || clashes[i].b == t) return true;
     return false;
-}
-
-int getThreadsInUse() {
-    return threadsInUse;
 }
 
 void printClashes() {
-    cout << "\n===== CLASH CHECK (threads used: "
-         << threadsInUse << ") =====\n";
-
-    if (clashes.empty()) {
+    cout << "\n===== CLASH CHECK (threads used: " << threadsInUse << ") =====\n";
+    cout << "Merged classes found: " << mergedGroupCount << "\n";
+    if (clashCount == 0) {
         cout << "No clashes found.\n";
         return;
     }
-
-    for (const ClashInfo& clash : clashes) {
-        cout << "[" << clash.kind << "] "
-             << clash.day << ", slot " << clash.slot
-             << ": " << clash.text << "\n";
-    }
-
-    cout << "Total clashes: " << clashes.size() << "\n";
+    for (int i = 0; i < clashCount; i++)
+        cout << "[" << clashes[i].kind << "] " << clashes[i].day << ", slot " << clashes[i].slot
+             << ": " << clashes[i].text << "\n";
+    cout << "Total clashes: " << clashCount << "\n";
 }
 
-// DEMO ONLY: intentionally moves entries to create clashes.
-// Do not call this during normal timetable loading or final display.
+// ---------------------------------------------------------------- spoil (demo)
 void spoilTimetable() {
     collectEntries();
-
-    if (listEntries.size() < 2) {
-        cout << "Nothing to spoil.\n";
-        return;
-    }
-
-    buildDayList();
-
-    int howMany = static_cast<int>(listEntries.size()) / 10;
-    howMany = max(howMany, 3);
-    howMany = min(howMany, 30);
-
+    if (listCount < 2) { cout << "Nothing to spoil.\n"; return; }
+    int howMany = listCount / 10;                  // about 10% of the classes
+    if (howMany < 3) howMany = 3;
+    if (howMany > 30) howMany = 30;
     int done = 0;
-
     cout << "\nSPOIL (demo): moving classes on purpose\n";
-
-    for (int attempt = 0;
-         attempt < howMany * 20 && done < howMany;
-         ++attempt) {
-        TimetableEntry* a =
-            listEntries[rand() % listEntries.size()];
-
-        int kind = done % 3; // 0 faculty, 1 section, 2 venue
-
-        vector<TimetableEntry*> candidates;
-
-        for (TimetableEntry* b : listEntries) {
-            if (b == a)
-                continue;
-
-            if (b->day == a->day &&
-                b->startSlot == a->startSlot) {
-                continue;
-            }
-
-            if (b->startSlot + a->duration - 1 > lastSlotNumber())
-                continue;
-
-            if (sameClass(a, b))
-                continue;
-
-            bool related =
-                (kind == 0 && b->facultyId == a->facultyId) ||
-                (kind == 1 && sharesSection(a, b)) ||
-                (kind == 2 && b->venueId == a->venueId);
-
-            if (related)
-                candidates.push_back(b);
+    for (int attempt = 0; attempt < howMany * 20 && done < howMany; attempt++) {
+        TimetableEntry* a = listEntries[rand() % listCount];
+        int kind = done % 3;                       // 0 = same teacher, 1 = same section, 2 = same room
+        TimetableEntry* cand[MAX_TIMETABLE];
+        int nc = 0;
+        for (int i = 0; i < listCount; i++) {
+            TimetableEntry* b = listEntries[i];
+            if (b == a || (b->day == a->day && b->startSlot == a->startSlot)) continue;
+            if (b->startSlot + a->duration - 1 > lastSlotNumber()) continue;
+            if (sameClass(a, b)) continue;         // would be a merged class, not a clash
+            bool related = (kind == 0 && b->facultyId == a->facultyId) ||
+                           (kind == 1 && sharesSection(a, b)) ||
+                           (kind == 2 && b->venueId == a->venueId);
+            if (related) cand[nc++] = b;
         }
-
-        if (candidates.empty())
-            continue;
-
-        TimetableEntry* b =
-            candidates[rand() % candidates.size()];
-
-        cout << "  " << a->subject << " (" << a->sectionOrGroup
-             << ") moved from " << a->day << " slot " << a->startSlot
-             << " to " << b->day << " slot " << b->startSlot << "\n";
-
+        if (nc == 0) continue;
+        TimetableEntry* b = cand[rand() % nc];
+        cout << "  " << a->subject << " (" << a->sectionOrGroup << ") moved from " << a->day
+             << " slot " << a->startSlot << " to " << b->day << " slot " << b->startSlot << "\n";
         a->day = b->day;
         a->startSlot = b->startSlot;
-        ++done;
+        done++;
     }
-
     runClashCheck();
-
-    cout << "\nNow the timetable has " << clashes.size()
-         << " clashes:\n";
-
+    cout << "\nNow the timetable has " << clashCount << " clashes:\n";
     printClashes();
 }
 
-// Automatically attempts to resolve clashes by changing a room or time.
-// The timetable entries are modified in place.
+// ---------------------------------------------------------------- optimise
+// Can class e be placed on (day, start) without a new clash? Its own venue and sections must be free.
+bool slotFreeFor(const TimetableEntry* e, const string& day, int start) {
+    if (start < 1 || start + e->duration - 1 > lastSlotNumber()) return false;
+    for (TimetableEntry* o = timetableHead; o != nullptr; o = o->next) {
+        if (o == e || o->day != day) continue;
+        if (o->startSlot > start + e->duration - 1 || start > o->startSlot + o->duration - 1) continue;
+        if (o->facultyId == e->facultyId || o->venueId == e->venueId || sharesSection(e, o)) return false;
+    }
+    return true;
+}
+
+// Is room venueId empty for the time of class e (on day, start)?
+bool venueFreeFor(const TimetableEntry* e, const string& venueId, const string& day, int start) {
+    for (TimetableEntry* o = timetableHead; o != nullptr; o = o->next) {
+        if (o == e || o->venueId != venueId || o->day != day) continue;
+        if (o->startSlot > start + e->duration - 1 || start > o->startSlot + o->duration - 1) continue;
+        return false;
+    }
+    return true;
+}
+
+// Tries to fix one problem of class e. First another room, then another time.
+// Capacity and auditorium problems can only be fixed with another room.
+bool tryFix(TimetableEntry* e, const string& kind) {
+    bool roomProblem = kind == "VENUE" || kind == "CAPACITY" || kind == "MERGE-RULE";
+    bool roomOnly = kind == "CAPACITY" || kind == "MERGE-RULE";
+    if (roomProblem) {
+        int need = strengthOf(e);
+        Venue* cur = searchVenueById(e->venueId);
+        for (int pass = 0; pass < 2; pass++)                 // pass 0: same type of room, pass 1: any room
+            for (Venue* v = venueHead; v != nullptr; v = v->next) {
+                if (cur && v->id == cur->id) continue;
+                if (v->capacity < need) continue;
+                if (pass == 0 && cur && v->type != cur->type) continue;
+                if (kind == "MERGE-RULE" && !auditoriumType.empty() && v->type == auditoriumType) continue;
+                if (venueFreeFor(e, v->id, e->day, e->startSlot)) { e->venueId = v->id; return true; }
+            }
+    }
+    if (!roomOnly) {
+        int base = 0;
+        for (int i = 0; i < dayListCount; i++) if (dayList[i] == e->day) base = i;
+        int last = lastSlotNumber();
+        for (int dd = 0; dd < dayListCount; dd++) {
+            string d = dayList[(base + dd) % dayListCount];
+            for (int s = 1; s <= last; s++) {
+                if (d == e->day && s == e->startSlot) continue;
+                if (slotFreeFor(e, d, s)) { e->day = d; e->startSlot = s; return true; }
+            }
+        }
+    }
+    return false;
+}
+
 void optimise() {
-    buildDayList();
     runClashCheck();
+    if (clashCount == 0) { cout << "Nothing to optimise: there are no clashes.\n"; return; }
 
-    if (clashes.empty()) {
-        cout << "Nothing to optimise: there are no clashes.\n";
-        return;
+    // remember the positions before the change
+    string origDay[MAX_TIMETABLE], origVenue[MAX_TIMETABLE];
+    int origSlot[MAX_TIMETABLE];
+    bool skip[MAX_TIMETABLE];
+    for (int i = 0; i < listCount; i++) {
+        origDay[i] = listEntries[i]->day;
+        origSlot[i] = listEntries[i]->startSlot;
+        origVenue[i] = listEntries[i]->venueId;
+        skip[i] = false;
     }
-
-    collectEntries();
-
-    vector<string> originalDays;
-    vector<string> originalVenues;
-    vector<int> originalSlots;
-    vector<bool> skip(listEntries.size(), false);
-
-    for (TimetableEntry* entry : listEntries) {
-        originalDays.push_back(entry->day);
-        originalSlots.push_back(entry->startSlot);
-        originalVenues.push_back(entry->venueId);
-    }
-
-    const int startingClashes = static_cast<int>(clashes.size());
+    int startClashes = clashCount;
 
     bool progress = true;
-
-    while (progress && !clashes.empty()) {
+    while (progress && clashCount > 0) {
         progress = false;
+        for (int c = 0; c < clashCount; c++) {
+            TimetableEntry* e = clashes[c].b ? clashes[c].b : clashes[c].a;   // move the second class
+            string kind = clashes[c].kind;
+            int idx = indexOf(e);
+            if (idx < 0 || skip[idx]) continue;
 
-        // Work from a snapshot because runClashCheck rebuilds the clash list.
-        vector<ClashInfo> currentClashes = clashes;
+            string oldDay = e->day, oldVenue = e->venueId;
+            int oldSlot = e->startSlot;
+            int before = clashCount;
+            if (!tryFix(e, kind)) { skip[idx] = true; continue; }
 
-        for (const ClashInfo& clash : currentClashes) {
-            TimetableEntry* entry = clash.b ? clash.b : clash.a;
-            string kind = clash.kind;
-
-            int index = indexOf(entry);
-
-            if (index < 0 || skip[index])
-                continue;
-
-            string oldDay = entry->day;
-            string oldVenue = entry->venueId;
-            int oldSlot = entry->startSlot;
-
-            int clashesBefore = static_cast<int>(clashes.size());
-
-            if (!tryFix(entry, kind)) {
-                skip[index] = true;
-                continue;
-            }
-
-            runClashCheck();
-
-            if (static_cast<int>(clashes.size()) >= clashesBefore) {
-                // The move did not reduce the total number of clashes.
-                entry->day = oldDay;
-                entry->startSlot = oldSlot;
-                entry->venueId = oldVenue;
-
-                skip[index] = true;
+            runClashCheck();                             // clashes are rebuilt: leave this loop
+            if (clashCount >= before) {                  // the move did not help: undo it
+                e->day = oldDay; e->startSlot = oldSlot; e->venueId = oldVenue;
+                skip[idx] = true;
                 runClashCheck();
             }
-
             progress = true;
             break;
         }
     }
 
-    cout << "\n===== OPTIMISATION RESULT =====\n";
-    cout << "Changes made:\n";
-
+    cout << "\n===== OPTIMISATION RESULT =====\nChanges made:\n";
     int moved = 0;
-
-    for (size_t i = 0; i < listEntries.size(); ++i) {
-        TimetableEntry* entry = listEntries[i];
-
-        if (entry->day == originalDays[i] &&
-            entry->startSlot == originalSlots[i] &&
-            entry->venueId == originalVenues[i]) {
-            continue;
-        }
-
-        ++moved;
-
-        cout << "  " << entry->subject << " ("
-             << entry->sectionOrGroup << "): "
-             << originalDays[i] << " slot " << originalSlots[i]
-             << " " << originalVenues[i]
-             << " -> " << entry->day << " slot "
-             << entry->startSlot << " " << entry->venueId << "\n";
+    for (int i = 0; i < listCount; i++) {
+        TimetableEntry* e = listEntries[i];
+        if (e->day == origDay[i] && e->startSlot == origSlot[i] && e->venueId == origVenue[i]) continue;
+        moved++;
+        cout << "  " << e->subject << " (" << e->sectionOrGroup << "): " << origDay[i] << " slot " << origSlot[i]
+             << " " << origVenue[i] << "  ->  " << e->day << " slot " << e->startSlot << " " << e->venueId << "\n";
     }
-
-    if (moved == 0)
-        cout << "  (none)\n";
-
-    cout << "\nClashes: " << startingClashes
-         << " -> " << clashes.size() << "\n";
-
-    if (!clashes.empty()) {
+    if (moved == 0) cout << "  (none)\n";
+    cout << "\nClashes: " << startClashes << "  ->  " << clashCount << "\n";
+    if (clashCount > 0) {
         cout << "These could not be fixed automatically:\n";
         printClashes();
     } else {
         cout << "The timetable is now clash free.\n";
     }
 }
+
+#ifndef MULTIT_NO_MAIN
+int main() {
+    loadAllCSVFiles();
+    buildDayList();
+    runClashCheck();
+    printClashes();
+    freeAllMemory();
+    return 0;
+}
+#endif
