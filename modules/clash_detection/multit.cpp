@@ -17,7 +17,7 @@
 #include "../file_handling/person1_file_handling.cpp"
 #undef main
 #include "../merged_classes/merged_class.cpp"           // Person 2: merged classes and their room rules
-
+#include "clashdetect.h"
 #include <cstddef>
 
 #ifdef _WIN32
@@ -38,17 +38,16 @@ const int MAX_TIMETABLE = 1000;                // most classes the checker and o
 const int MAX_DAY_LIST = 7;
 const int MAX_THREADS = 8;                     // most threads used for the clash check
 
-struct ClashInfo {
-    string day;
-    int slot;                                  // the later of the two starting slots
-    string kind;                               // SECTION, FACULTY or VENUE
-    string text;                               // what is wrong, in words
-    TimetableEntry* a;
-    TimetableEntry* b;
-};
-
 ClashInfo clashes[MAX_CLASHES];
 int clashCount = 0;
+const vector<ClashInfo>& getClashes() {
+    static vector<ClashInfo> result;
+
+    result.assign(clashes, clashes + clashCount);
+
+    return result;
+}
+
 
 // The classes in one array, so that the checker can use indexes (0 .. listCount-1).
 TimetableEntry* listEntries[MAX_TIMETABLE];
@@ -65,7 +64,9 @@ ClashInfo threadClashes[MAX_THREADS][MAX_CLASHES_PER_THREAD];
 int threadClashCount[MAX_THREADS];
 int threadsInUse = 1;
 int threadDropped[MAX_THREADS];          // problems a thread could not store (list full)
-
+int getThreadsInUse() {
+    return threadsInUse;
+}
 // Number of merged classes found by Person 2's check in the last run.
 int mergedGroupCount = 0;
 
