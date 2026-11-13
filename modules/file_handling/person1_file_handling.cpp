@@ -378,7 +378,7 @@ void loadCsvFile(const string& fileName, int columns,
 // ================= CONFIGURATION =================
 
 void loadConfigFile() {
-    ifstream file("config.txt");
+    ifstream file("data/config.txt");
 
     if (!file.is_open()) return;
 
@@ -405,8 +405,8 @@ void loadConfigFile() {
 
     file.close();
 }
-
-void loadAllCSVFiles() {
+void loadAllCSVFiles()
+ {
     loadConfigFile();
     slotCount = 0;
 
@@ -414,12 +414,12 @@ void loadAllCSVFiles() {
     cout << "LOADING ALL CSV FILES\n";
     cout << "========================================\n";
 
-    loadCsvFile("faculty.csv", 2, false, checkFacultyRow);
-    loadCsvFile("sections.csv", 3, false, checkSectionRow);
-    loadCsvFile("venues.csv", 4, false, checkVenueRow);
-    loadCsvFile("merged_groups.csv", 2, true, checkMergedGroupRow);
-    loadCsvFile("slots.csv", 3, true, checkSlotRow);
-    loadCsvFile("timetable.csv", 7, false, checkTimetableRow);
+    loadCsvFile("data/faculty.csv", 2, false, checkFacultyRow);
+loadCsvFile("data/sections.csv", 3, false, checkSectionRow);
+loadCsvFile("data/venues.csv", 4, false, checkVenueRow);
+loadCsvFile("data/merged_groups.csv", 2, true, checkMergedGroupRow);
+loadCsvFile("data/slots.csv", 3, true, checkSlotRow);
+loadCsvFile("data/timetable.csv", 7, false, checkTimetableRow);
 
     cout << "\nCSV loading complete!\n";
 }

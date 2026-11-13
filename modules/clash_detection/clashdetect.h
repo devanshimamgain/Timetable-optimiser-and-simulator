@@ -35,3 +35,4 @@ void spoilTimetable();
 // Attempts to resolve clashes by changing a venue and/or time.
 // This function modifies the timetable entries in place.
 void optimise();
+void buildDayList();

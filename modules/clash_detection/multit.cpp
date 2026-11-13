@@ -1,22 +1,5 @@
-// multit.cpp  (Person 3: clash detection on several threads, spoil demo and optimiser)
-//
-// Works on the timetable that Person 1 loads (person1_file_handling.cpp):
-//   runClashCheck()   finds SECTION, FACULTY and VENUE clashes. The pairs of classes are split
-//                     between several threads, which run at the same time.
-//                     Two classes that are the same class for several sections are a MERGED
-//                     class, not a clash.
-//   spoilTimetable()  demo: moves some classes on purpose so that clashes appear
-//   optimise()        fixes the clashes: first another room, then another time.
-//                     A move that does not reduce the clashes is undone.
-//
-// Compile on Windows (MinGW):  g++ -std=c++17 -Wall -Wextra multit.cpp -o multit.exe
-// Compile on Linux / macOS:    g++ -std=c++17 -Wall -Wextra -pthread multit.cpp -o multit
-// Person 4 includes this file with MULTIT_NO_MAIN defined.
-
-#define main person1_main
-#include "../file_handling/person1_file_handling.cpp"
-#undef main
-#include "../merged_classes/merged_class.cpp"           // Person 2: merged classes and their room rules
+#include "../file_handling/person1_file_handling.h"
+#include "../merged_classes/merged_class.h"        // Person 2: merged classes and their room rules
 #include "clashdetect.h"
 #include <cstddef>
 

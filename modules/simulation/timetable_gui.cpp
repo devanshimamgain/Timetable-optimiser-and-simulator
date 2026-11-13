@@ -33,6 +33,7 @@ TimetableGUI::TimetableGUI()
       currentPage(Page::Dashboard) {
 
     window.setFramerateLimit(60);
+    
 
     loadFont();
 
@@ -1045,10 +1046,11 @@ void TimetableGUI::handleEvents() {
 
             if (mouse->button == sf::Mouse::Button::Left) {
 
-                handleClick(
-                    static_cast<float>(mouse->position.x),
-                    static_cast<float>(mouse->position.y)
-                );
+                sf::Vector2i pixelPosition = sf::Mouse::getPosition(window);
+sf::Vector2f worldPosition =
+    window.mapPixelToCoords(pixelPosition);
+
+handleClick(worldPosition.x, worldPosition.y);
             }
         }
     }
