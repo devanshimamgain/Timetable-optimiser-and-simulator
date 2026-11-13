@@ -8,7 +8,6 @@
 // HELPER FUNCTIONS
 // --------------------------------------------------
 
-// Convert a string to lowercase for day comparison.
 static string toLowerCase(string value) {
     for (char& ch : value) {
         ch = static_cast<char>(
@@ -19,7 +18,6 @@ static string toLowerCase(string value) {
     return value;
 }
 
-// Get the order of a weekday.
 static int dayOrder(const string& day) {
     string d = toLowerCase(day);
 
@@ -58,19 +56,18 @@ void TimetableSimulator::refresh() {
 
     currentIndex = -1;
 
-    // Try to preserve the previous position after refreshing.
+    // Preserve the previous position if possible.
     if (!oldDay.empty()) {
         for (int i = 0; i < static_cast<int>(simulationSlots.size()); i++) {
             if (simulationSlots[i].day == oldDay &&
                 simulationSlots[i].slot == oldSlot) {
-
                 currentIndex = i;
                 return;
             }
         }
     }
 
-    // Start from the beginning if the old position no longer exists.
+    // Otherwise start from the beginning.
     if (!simulationSlots.empty()) {
         currentIndex = 0;
     }
@@ -177,8 +174,7 @@ void TimetableSimulator::reset() {
 
 bool TimetableSimulator::hasCurrentSlot() const {
     return currentIndex >= 0 &&
-           currentIndex <
-           static_cast<int>(simulationSlots.size());
+           currentIndex < static_cast<int>(simulationSlots.size());
 }
 
 string TimetableSimulator::getCurrentDay() const {
@@ -209,9 +205,7 @@ int TimetableSimulator::getTotalSlots() const {
 // GET CLASSES AT CURRENT SLOT
 // --------------------------------------------------
 
-vector<TimetableEntry*>
-TimetableSimulator::getCurrentEntries() const {
-
+vector<TimetableEntry*> TimetableSimulator::getCurrentEntries() const {
     if (!hasCurrentSlot()) {
         return {};
     }
@@ -226,8 +220,7 @@ TimetableSimulator::getCurrentEntries() const {
 // GET CLASSES AT A PARTICULAR SLOT
 // --------------------------------------------------
 
-vector<TimetableEntry*>
-TimetableSimulator::getEntriesAt(
+vector<TimetableEntry*> TimetableSimulator::getEntriesAt(
     const string& day,
     int slot
 ) const {
@@ -242,8 +235,8 @@ TimetableSimulator::getEntriesAt(
             continue;
         }
 
-        // Include classes that are currently running.
-        // This also handles classes lasting two or more slots.
+        // Include classes currently running.
+        // This also handles classes lasting multiple slots.
         int endingSlot = t->startSlot + t->duration - 1;
 
         if (slot >= t->startSlot && slot <= endingSlot) {
@@ -265,7 +258,7 @@ vector<string> getEntrySections(const TimetableEntry* entry) {
         return sections;
     }
 
-    // Check whether this entry refers to a declared merged group.
+    // Check whether this entry refers to a merged group.
     MergedGroup* group =
         searchMergedGroupById(entry->sectionOrGroup);
 
@@ -281,9 +274,7 @@ vector<string> getEntrySections(const TimetableEntry* entry) {
     string current;
 
     for (size_t i = 0; i <= ids.size(); i++) {
-
         if (i == ids.size() || ids[i] == ';') {
-
             string sectionId = trim(current);
 
             if (!sectionId.empty()) {
@@ -308,7 +299,6 @@ bool entryIncludesSection(
     const TimetableEntry* entry,
     const string& sectionId
 ) {
-
     vector<string> sections = getEntrySections(entry);
 
     for (const string& id : sections) {
