@@ -1,9 +1,9 @@
 
 #include "timetable_gui.h"
 
-#include "person1_file_handling.h"
-#include "merged_class.h"
-#include "clashdetect.h"
+#include "../file_handling/person1_file_handling.h"
+#include "../merged_classes/merged_class.h"
+#include "../clash_detection/clashdetect.h"
 
 #include <iostream>
 #include <sstream>
