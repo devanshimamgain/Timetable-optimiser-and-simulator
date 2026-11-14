@@ -421,19 +421,82 @@ void TimetableGUI::drawDashboard() {
 // WEEKLY TIMETABLE
 // --------------------------------------------------
 
+
+
 void TimetableGUI::drawTimetable() {
 
+    // Load section IDs once.
+    // Load only main section IDs, not groups or electives.
+if (timetableSections.empty()) {
+    for (Section* s = sectionHead;
+         s != nullptr;
+         s = s->next) {
+
+        if (s->name.find(" - Section ") != string::npos) {
+            timetableSections.push_back(s->id);
+        }
+    }
+}
+
+    // Check that sections are available.
+    if (timetableSections.empty()) {
+        drawText("No sections loaded!", 400, 300, 22);
+        return;
+    }
+
+    // Keep selected index within valid range.
+    if (selectedSectionIndex < 0 ||
+        selectedSectionIndex >= static_cast<int>(timetableSections.size())) {
+        selectedSectionIndex = 0;
+    }
+
+    // Heading.
     drawText(
-        "Weekly Timetable",
-        270, 110,
-        29
+        "Weekly Timetable - Section " +
+        timetableSections[selectedSectionIndex],
+        270, 110, 25
     );
 
     drawText(
-        "Green = Clash-free     Red = Clash detected",
-        270, 150,
-        14,
+        "Green = Clash-free    Red = Clash detected",
+        270, 150, 14,
         sf::Color(170, 185, 200)
+    );
+
+    // Section navigation.
+    drawButton(
+        "PREVIOUS",
+        270, 170, 110, 32,
+        selectedSectionIndex > 0
+            ? sf::Color(65, 80, 110)
+            : sf::Color(65, 70, 80)
+    );
+
+    drawButton(
+        "NEXT",
+        390, 170, 110, 32,
+        selectedSectionIndex <
+            static_cast<int>(timetableSections.size()) - 1
+            ? sf::Color(49, 110, 160)
+            : sf::Color(65, 70, 80)
+    );
+
+    // Show selected section name.
+    Section* selected = searchSectionById(
+        timetableSections[selectedSectionIndex]
+    );
+
+    string sectionLabel =
+        "Viewing: " + timetableSections[selectedSectionIndex];
+
+    if (selected != nullptr) {
+        sectionLabel += " - " + selected->name;
+    }
+
+    drawText(
+        sectionLabel,
+        530, 178, 15,
+        sf::Color(100, 190, 255)
     );
 
     const string days[] = {
@@ -442,9 +505,9 @@ void TimetableGUI::drawTimetable() {
     };
 
     const float startX = 330;
-    const float startY = 205;
+    const float startY = 215;
     const float cellWidth = 140;
-    const float cellHeight = 62;
+    const float cellHeight = 55;
 
     int slots = slotCount;
 
@@ -464,7 +527,7 @@ void TimetableGUI::drawTimetable() {
         }
     }
 
-    slots = min(slots, 8);
+    slots = min(slots, 10);
 
     // Draw day headings.
     for (int d = 0; d < 6; d++) {
@@ -508,10 +571,23 @@ void TimetableGUI::drawTimetable() {
         }
     }
 
-    // Draw timetable entries.
-    for (TimetableEntry* t = timetableHead;
-         t != nullptr;
-         t = t->next) {
+    // Merged classes appear in every participating section.
+string selectedSection =
+    timetableSections[selectedSectionIndex];
+
+// Draw only entries belonging to the selected section.
+for (TimetableEntry* t = timetableHead;
+     t != nullptr;
+     t = t->next) {
+
+    bool belongsToSection =
+        (t->sectionOrGroup == selectedSection) ||
+        (t->sectionOrGroup.rfind(selectedSection + "-", 0) == 0) ||
+        entryIncludesSection(t, selectedSection);
+
+    if (!belongsToSection) {
+        continue;
+    }
 
         int day = guiDayOrder(t->day) - 1;
 
@@ -527,6 +603,7 @@ void TimetableGUI::drawTimetable() {
         );
 
         float x = startX + day * cellWidth + 3;
+
         float y = startY + 35 +
                   (t->startSlot - 1) * cellHeight + 3;
 
@@ -562,37 +639,30 @@ void TimetableGUI::drawTimetable() {
 // CLASH REPORT
 // --------------------------------------------------
 
+
 void TimetableGUI::drawClashReport() {
 
-    drawText(
-        "Clash Report",
-        270, 110,
-        29
-    );
+    drawText("Clash Report", 270, 110, 29);
 
     const vector<ClashInfo>& clashes = getClashes();
 
     drawText(
         "Total clashes: " + to_string(clashes.size()),
-        270, 155,
-        16,
+        270, 155, 16,
         sf::Color(255, 120, 120)
     );
 
     float y = 205;
 
     if (clashes.empty()) {
-
         drawRectangle(
-            270, y,
-            900, 90,
+            270, y, 900, 90,
             sf::Color(34, 70, 57)
         );
 
         drawText(
             "No clashes detected!",
-            295, y + 30,
-            20,
+            295, y + 30, 20,
             sf::Color(100, 220, 160)
         );
 
@@ -603,48 +673,56 @@ void TimetableGUI::drawClashReport() {
 
     for (const ClashInfo& clash : clashes) {
 
-        if (shown >= 8) {
+        if (shown >= 6)
             break;
-        }
 
         drawRectangle(
-            270, y,
-            900, 65,
+            270, y, 900, 100,
             sf::Color(55, 37, 48)
         );
 
         drawText(
             clash.kind + " CLASH",
-            290, y + 8,
-            14,
+            290, y + 7, 14,
             sf::Color(255, 115, 115)
         );
 
         drawText(
             clash.day + " | Slot " + to_string(clash.slot),
-            480, y + 8,
-            13,
+            480, y + 7, 13,
             sf::Color(210, 220, 235)
         );
 
+        if (clash.a && clash.b) {
+
+            drawText(
+                "Entry 1: " + clash.a->sectionOrGroup +
+                " - " + clash.a->subject,
+                290, y + 30, 13
+            );
+
+            drawText(
+                "Entry 2: " + clash.b->sectionOrGroup +
+                " - " + clash.b->subject,
+                290, y + 50, 13
+            );
+        }
+
         drawText(
             clash.text,
-            290, y + 32,
-            13,
+            290, y + 73, 12,
             sf::Color(225, 225, 235)
         );
 
-        y += 78;
+        y += 112;
         shown++;
     }
 
-    if (clashes.size() > 8) {
-
+    if (clashes.size() > 6) {
         drawText(
-            "Showing first 8 of " +
+            "Showing first 6 of " +
             to_string(clashes.size()) + " clashes.",
-            270, y + 5,
-            13,
+            270, y + 5, 13,
             sf::Color(160, 175, 195)
         );
     }
@@ -654,30 +732,38 @@ void TimetableGUI::drawClashReport() {
 // MERGED CLASSES
 // --------------------------------------------------
 
+
 void TimetableGUI::drawMergedClasses() {
 
-    drawText(
-        "Merged Classes",
-        270, 110,
-        29
-    );
+    drawText("Merged Classes", 270, 110, 29);
 
     drawText(
         "Groups detected using Graph and DFS",
-        270, 150,
-        14,
+        270, 150, 14,
         sf::Color(160, 180, 200)
     );
+
+    // Store information about every detected group.
+    struct MergedGroupDisplay {
+        string day;
+        string subject;
+        string sectionNames;
+        string reason;
+        int slot;
+        int strength;
+        bool valid;
+    };
+
+    vector<MergedGroupDisplay> groups;
 
     const string days[] = {
         "Monday", "Tuesday", "Wednesday",
         "Thursday", "Friday", "Saturday"
     };
 
-    int totalGroups = 0;
     int invalidGroups = 0;
-    float y = 195;
 
+    // Collect ALL detected groups first.
     for (const string& day : days) {
 
         int maxSlot = slotCount;
@@ -701,112 +787,157 @@ void TimetableGUI::drawMergedClasses() {
             SlotEntry entries[MAX_ENTRIES];
 
             int n = collectSlotEntries(
-                day,
-                slot,
-                entries,
-                MAX_ENTRIES
+                day, slot, entries, MAX_ENTRIES
             );
 
             MergeDetector detector(entries, n);
             detector.detect();
 
-            if (detector.getGroupCount() == 0) {
-                continue;
-            }
-
             for (const DetectedGroup* g = detector.getFirstGroup();
                  g != nullptr;
                  g = g->getNext()) {
 
-                if (y > 680) {
-                    break;
-                }
+                MergedGroupDisplay item;
 
-                totalGroups++;
-
-                if (!g->isValid()) {
-                    invalidGroups++;
-                }
-
-                sf::Color background = g->isValid()
-                    ? sf::Color(35, 75, 60)
-                    : sf::Color(90, 45, 50);
-
-                drawRectangle(
-                    270, y,
-                    900, 65,
-                    background
-                );
-
-                string sectionNames;
-
-                for (int i = 0; i < g->getCount(); i++) {
-
-                    sectionNames +=
-                        detector.getEntry(g->getMember(i)).section;
-
-                    if (i + 1 < g->getCount()) {
-                        sectionNames += ", ";
-                    }
-                }
+                item.day = day;
+                item.slot = slot;
+                item.valid = g->isValid();
+                item.strength = g->getStrength();
+                item.reason = g->getReason();
 
                 const SlotEntry& first =
                     detector.getEntry(g->getMember(0));
 
-                drawText(
-                    first.subject + " | " + sectionNames,
-                    290, y + 8,
-                    15
-                );
+                item.subject = first.subject;
 
-                string status = g->isValid()
-                    ? "VALID"
-                    : "INVALID: " + g->getReason();
+                for (int i = 0; i < g->getCount(); i++) {
 
-                drawText(
-                    day + " | Slot " + to_string(slot) +
-                    " | Strength: " + to_string(g->getStrength()),
-                    290, y + 35,
-                    12,
-                    sf::Color(205, 215, 230)
-                );
+                    item.sectionNames +=
+                        detector.getEntry(g->getMember(i)).section;
 
-                drawText(
-                    status,
-                    900, y + 22,
-                    13,
-                    g->isValid()
-                        ? sf::Color(100, 230, 160)
-                        : sf::Color(255, 130, 130)
-                );
+                    if (i + 1 < g->getCount()) {
+                        item.sectionNames += ", ";
+                    }
+                }
 
-                y += 75;
+                if (!item.valid) {
+                    invalidGroups++;
+                }
+
+                groups.push_back(item);
             }
         }
-
-        if (y > 680) {
-            break;
-        }
     }
+
+    // Pagination settings.
+    const int GROUPS_PER_PAGE = 5;
+
+    int totalGroups = static_cast<int>(groups.size());
+
+    int totalPages = (totalGroups + GROUPS_PER_PAGE - 1)
+                     / GROUPS_PER_PAGE;
+
+    if (totalPages == 0) {
+        totalPages = 1;
+    }
+
+    // Keep the selected page within valid limits.
+    if (mergedPage >= totalPages) {
+        mergedPage = totalPages - 1;
+    }
+
+    if (mergedPage < 0) {
+        mergedPage = 0;
+    }
+
+    int startIndex = mergedPage * GROUPS_PER_PAGE;
+    int endIndex = min(startIndex + GROUPS_PER_PAGE, totalGroups);
 
     if (totalGroups == 0) {
 
         drawText(
             "No merged classes detected.",
-            290, 220,
-            18,
+            290, 220, 18,
             sf::Color(180, 190, 210)
         );
     }
 
+    // Display only the groups belonging to the current page.
+    float y = 195;
+
+    for (int i = startIndex; i < endIndex; i++) {
+
+        const MergedGroupDisplay& g = groups[i];
+
+        sf::Color background = g.valid
+            ? sf::Color(35, 75, 60)
+            : sf::Color(90, 45, 50);
+
+        drawRectangle(
+            270, y, 900, 75,
+            background
+        );
+
+        drawText(
+            g.subject + " | " + g.sectionNames,
+            290, y + 8, 15
+        );
+
+        drawText(
+            g.day + " | Slot " + to_string(g.slot) +
+            " | Strength: " + to_string(g.strength),
+            290, y + 35, 12,
+            sf::Color(205, 215, 230)
+        );
+
+        string status = g.valid
+            ? "VALID"
+            : "INVALID: " + g.reason;
+
+        drawText(
+            status,
+            900, y + 22, 13,
+            g.valid
+                ? sf::Color(100, 230, 160)
+                : sf::Color(255, 130, 130)
+        );
+
+        y += 85;
+    }
+
+    // Overall statistics.
     drawText(
-        "Total: " + to_string(totalGroups) +
+        "Total groups: " + to_string(totalGroups) +
         " | Invalid: " + to_string(invalidGroups),
-        270, 710,
-        15,
+        270, 635, 15,
         sf::Color(180, 195, 215)
     );
+
+    // Pagination buttons.
+    drawButton(
+        "PREVIOUS",
+        650, 690, 150, 45,
+        mergedPage > 0
+            ? sf::Color(49, 110, 160)
+            : sf::Color(65, 70, 80)
+    );
+
+    drawText(
+        "Page " + to_string(mergedPage + 1) +
+        " / " + to_string(totalPages),
+        820, 703, 15,
+        sf::Color(210, 220, 235)
+    );
+
+    drawButton(
+        "NEXT",
+        930, 690, 150, 45,
+        mergedPage + 1 < totalPages
+            ? sf::Color(49, 110, 160)
+            : sf::Color(65, 70, 80)
+    );
 }
+
 
 // --------------------------------------------------
 // OPTIMISATION PAGE
@@ -887,18 +1018,14 @@ void TimetableGUI::drawOptimisation() {
 // SIMULATION PAGE
 // --------------------------------------------------
 
+
 void TimetableGUI::drawSimulation() {
 
-    drawText(
-        "Live Timetable Simulation",
-        270, 110,
-        29
-    );
+    drawText("Live Timetable Simulation", 270, 110, 29);
 
     drawText(
         "Move through the timetable one slot at a time.",
-        270, 150,
-        14,
+        270, 150, 14,
         sf::Color(160, 180, 200)
     );
 
@@ -906,8 +1033,7 @@ void TimetableGUI::drawSimulation() {
 
         drawText(
             "No simulation data available.",
-            290, 240,
-            20,
+            290, 240, 20,
             sf::Color(255, 190, 100)
         );
 
@@ -915,34 +1041,55 @@ void TimetableGUI::drawSimulation() {
     }
 
     drawRectangle(
-        270, 205,
-        900, 110,
+        270, 205, 900, 110,
         sf::Color(34, 43, 63)
     );
 
     drawText(
         simulator.getCurrentDay(),
-        300, 225,
-        23,
+        300, 225, 23,
         sf::Color(100, 190, 255)
     );
 
     drawText(
-        "Slot " +
-        to_string(simulator.getCurrentSlotNumber()),
-        300, 265,
-        19
+        "Slot " + to_string(simulator.getCurrentSlotNumber()),
+        300, 265, 19
     );
 
     vector<TimetableEntry*> entries =
         simulator.getCurrentEntries();
 
+    int totalEntries = static_cast<int>(entries.size());
+
     drawText(
-        "Classes currently running: " +
-        to_string(entries.size()),
-        270, 345,
-        19
+        "Classes currently running: " + to_string(totalEntries),
+        270, 345, 19
     );
+
+    const int ENTRIES_PER_PAGE = 3;
+
+    int totalPages =
+        (totalEntries + ENTRIES_PER_PAGE - 1) / ENTRIES_PER_PAGE;
+
+    if (totalPages == 0) {
+        totalPages = 1;
+    }
+
+    if (simulationEntriesPage >= totalPages) {
+        simulationEntriesPage = totalPages - 1;
+    }
+
+    if (simulationEntriesPage < 0) {
+        simulationEntriesPage = 0;
+    }
+
+    int startIndex = simulationEntriesPage * ENTRIES_PER_PAGE;
+
+    int endIndex = startIndex + ENTRIES_PER_PAGE;
+
+    if (endIndex > totalEntries) {
+        endIndex = totalEntries;
+    }
 
     float y = 395;
 
@@ -950,19 +1097,19 @@ void TimetableGUI::drawSimulation() {
 
         drawText(
             "No classes scheduled during this slot.",
-            290, y,
-            17,
+            290, y, 17,
             sf::Color(170, 185, 205)
         );
     }
 
-    for (TimetableEntry* t : entries) {
+    for (int i = startIndex; i < endIndex; i++) {
+
+        TimetableEntry* t = entries[i];
 
         bool clash = hasClash(t);
 
         drawRectangle(
-            270, y,
-            900, 65,
+            270, y, 900, 65,
             clash
                 ? sf::Color(110, 48, 55)
                 : sf::Color(35, 85, 65)
@@ -970,64 +1117,78 @@ void TimetableGUI::drawSimulation() {
 
         drawText(
             getEntryName(t),
-            290, y + 8,
-            16
+            290, y + 8, 16
         );
 
         drawText(
             "Faculty: " + t->facultyId +
             " | Venue: " + t->venueId,
-            290, y + 35,
-            13,
+            290, y + 35, 13,
             sf::Color(210, 220, 230)
         );
 
         drawText(
             clash ? "CLASH" : "CLEAR",
-            1030, y + 22,
-            14,
+            1030, y + 22, 14,
             clash
                 ? sf::Color(255, 125, 125)
                 : sf::Color(110, 230, 165)
         );
 
-        y += 75;
-
-        if (y > 620) {
-            break;
-        }
+        y += 85;
     }
 
-    // Navigation controls
+    // Class-list pagination.
     drawButton(
         "PREVIOUS",
-        270, 695,
-        140, 45,
+        760, 635, 130, 40,
+        simulationEntriesPage > 0
+            ? sf::Color(49, 110, 160)
+            : sf::Color(65, 70, 80)
+    );
+
+    drawText(
+        "Page " + to_string(simulationEntriesPage + 1) +
+        " / " + to_string(totalPages),
+        900, 647, 14,
+        sf::Color(210, 220, 235)
+    );
+
+    drawButton(
+        "NEXT",
+        1000, 635, 130, 40,
+        simulationEntriesPage + 1 < totalPages
+            ? sf::Color(49, 110, 160)
+            : sf::Color(65, 70, 80)
+    );
+
+    // Slot navigation controls.
+    drawButton(
+        "PREVIOUS",
+        270, 695, 140, 45,
         sf::Color(65, 80, 110)
     );
 
     drawButton(
         "NEXT",
-        430, 695,
-        140, 45,
+        430, 695, 140, 45,
         sf::Color(49, 110, 160)
     );
 
     drawButton(
         "RESET",
-        590, 695,
-        140, 45,
+        590, 695, 140, 45,
         sf::Color(100, 80, 125)
     );
 
     drawText(
         to_string(simulator.getCurrentIndex() + 1) +
         " / " + to_string(simulator.getTotalSlots()),
-        770, 708,
-        15,
+        770, 708, 15,
         sf::Color(190, 205, 220)
     );
 }
+
 
 // --------------------------------------------------
 // EVENT HANDLING
@@ -1060,6 +1221,7 @@ handleClick(worldPosition.x, worldPosition.y);
 // MOUSE CLICK HANDLING
 // --------------------------------------------------
 
+
 void TimetableGUI::handleClick(float x, float y) {
 
     // Sidebar navigation.
@@ -1087,6 +1249,30 @@ void TimetableGUI::handleClick(float x, float y) {
         return;
     }
 
+    // Timetable section navigation.
+    if (currentPage == Page::Timetable) {
+
+        if (y >= 170 && y <= 205) {
+
+            if (x >= 270 && x <= 380) {
+                // Previous section.
+                if (selectedSectionIndex > 0) {
+                    selectedSectionIndex--;
+                }
+            }
+
+            else if (x >= 390 && x <= 500) {
+                // Next section.
+                if (selectedSectionIndex <
+                    static_cast<int>(timetableSections.size()) - 1) {
+                    selectedSectionIndex++;
+                }
+            }
+
+            return;
+        }
+    }
+
     // Optimisation button.
     if (currentPage == Page::Optimisation) {
 
@@ -1098,26 +1284,65 @@ void TimetableGUI::handleClick(float x, float y) {
             // Refresh clash information after optimisation.
             runClashCheck();
 
-            // Rebuild simulation while preserving position if possible.
+            // Rebuild simulation.
             simulator.refresh();
         }
     }
 
-    // Simulation controls.
+    // Merged Classes pagination.
+    if (currentPage == Page::MergedClasses) {
+
+        if (y >= 690 && y <= 740) {
+
+            if (x >= 650 && x <= 800) {
+                if (mergedPage > 0) {
+                    mergedPage--;
+                }
+            }
+
+            else if (x >= 930 && x <= 1080) {
+                mergedPage++;
+            }
+        }
+    }
+
+    // Simulation class-list pagination.
+    if (currentPage == Page::Simulation) {
+
+        if (y >= 635 && y <= 675) {
+
+            if (x >= 760 && x <= 890) {
+                if (simulationEntriesPage > 0) {
+                    simulationEntriesPage--;
+                }
+            }
+
+            else if (x >= 1000 && x <= 1130) {
+                simulationEntriesPage++;
+            }
+
+            return;
+        }
+    }
+
+    // Simulation slot controls.
     if (currentPage == Page::Simulation) {
 
         if (y >= 695 && y <= 740) {
 
             if (x >= 270 && x <= 410) {
                 simulator.previous();
+                simulationEntriesPage = 0;
             }
 
             else if (x >= 430 && x <= 570) {
                 simulator.next();
+                simulationEntriesPage = 0;
             }
 
             else if (x >= 590 && x <= 730) {
                 simulator.reset();
+                simulationEntriesPage = 0;
             }
         }
     }

@@ -25,6 +25,12 @@ private:
     };
 
     Page currentPage;
+    int mergedPage = 0;
+    int simulationEntriesPage = 0;
+    vector<string> timetableSections;
+int selectedSectionIndex = 0;
+    // Timetable navigation
+bool showAllSections = false;
 
     // Window dimensions
     const unsigned int WINDOW_WIDTH = 1280;
