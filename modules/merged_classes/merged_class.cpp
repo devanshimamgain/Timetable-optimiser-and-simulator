@@ -3,10 +3,7 @@
 
 #include <algorithm>
 
-// ==================================================
 // GRAPH IMPLEMENTATION
-// ==================================================
-
 Graph::Graph(int nodes) {
     n = (nodes < 0) ? 0 :
         (nodes > MAX_ENTRIES ? MAX_ENTRIES : nodes);
@@ -16,7 +13,6 @@ Graph::Graph(int nodes) {
         visited[i] = false;
     }
 }
-
 Graph::~Graph() {
     for (int i = 0; i < n; i++) {
         AdjNode* p = head[i];
@@ -28,7 +24,6 @@ Graph::~Graph() {
         }
     }
 }
-
 void Graph::addEdge(int a, int b) {
     if (a < 0 || b < 0 || a >= n || b >= n || a == b) {
         return;
@@ -61,10 +56,8 @@ void Graph::dfs(int u, int members[], int& count) {
     }
 }
 
-// ==================================================
-// DETECTED GROUP IMPLEMENTATION
-// ==================================================
 
+// DETECTED GROUP IMPLEMENTATION
 DetectedGroup::DetectedGroup()
     : count(0),
       totalStrength(0),
@@ -120,10 +113,8 @@ void DetectedGroup::setNext(DetectedGroup* p) {
     next = p;
 }
 
-// ==================================================
-// GROUP LIST IMPLEMENTATION
-// ==================================================
 
+// GROUP LIST IMPLEMENTATION
 GroupList::GroupList()
     : head(nullptr), tail(nullptr), size(0) {
 }
@@ -163,10 +154,7 @@ int GroupList::getSize() const {
     return size;
 }
 
-// ==================================================
 // MERGE DETECTOR IMPLEMENTATION
-// ==================================================
-
 MergeDetector::MergeDetector(const SlotEntry e[], int count)
     : entries(e),
       n(count < 0 ? 0 :
@@ -331,11 +319,7 @@ void MergeDetector::print() const {
         group = group->getNext();
     }
 }
-
-// ==================================================
 // COLLECT ENTRIES FOR ONE SLOT
-// ==================================================
-
 int collectSlotEntries(
     const string& day,
     int slot,
@@ -397,10 +381,7 @@ int collectSlotEntries(
     return count;
 }
 
-// ==================================================
 // CHECK MERGED CLASSES IN ONE SLOT
-// ==================================================
-
 int checkMergedClassesInSlot(
     const string& day,
     int slot,
@@ -448,10 +429,8 @@ int checkMergedClassesInSlot(
     return detector.getGroupCount();
 }
 
-// ==================================================
-// DISPLAY MERGED CLASSES FOR THE TIMETABLE
-// ==================================================
 
+// DISPLAY MERGED CLASSES FOR THE TIMETABLE
 void showMergedClasses() {
     const string days[] = {
         "Monday", "Tuesday", "Wednesday",
